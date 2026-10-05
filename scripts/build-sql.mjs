@@ -1,5 +1,7 @@
 // Builds final_supabase.sql = sql/schema.sql + generated catalogue seed.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { ALIASES } from '../sql/aliases.mjs';
+import { PEDS } from '../sql/peds.mjs';
 import { TESTS, PACKAGES, ANTIBIOTICS, TEMPLATES } from '../sql/catalogue.mjs';
 
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -9,6 +11,13 @@ for (const t of TESTS) {
   const o = { code: t.code, name: t.name, dept: t.dept, sample: t.sample, container: t.container, tat: t.tat,
     prep: t.prep, kind: t.kind, method: t.method, note: t.note, order: t.order * 10, auto: t.auto, params: t.params };
   lines.push(`select public._seed_test($j$${JSON.stringify(o)}$j$::jsonb);`);
+}
+for (const [name, bands] of Object.entries(PEDS)) {
+  const j = bands.map(([a0, a1, g, lo, hi, x]) => ({ a0, a1, g, lo, hi, x }));
+  lines.push(`select public._seed_peds(${q(name)}, $j$${JSON.stringify(j)}$j$::jsonb);`);
+}
+for (const [code, a] of Object.entries(ALIASES)) {
+  lines.push(`update public.lab_tests set aliases = ${q(a)} where code = ${q(code)} and is_starter and aliases is null;`);
 }
 PACKAGES.forEach(([code, name, codes], i) =>
   lines.push(`select public._seed_package(${q(code)}, ${q(name)}, ${5000 + i}, array[${codes.map(q).join(',')}]);`));

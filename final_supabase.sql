@@ -212,6 +212,7 @@ create unique index if not exists lab_tests_name_uq on public.lab_tests (lower(n
 alter table public.lab_tests add column if not exists kind           text not null default 'test';
 alter table public.lab_tests add column if not exists components     jsonb not null default '[]'::jsonb;
 alter table public.lab_tests add column if not exists container      text;
+alter table public.lab_tests add column if not exists aliases        text;   -- other names people search by (e.g. 'sperm' for Semen Analysis)
 alter table public.lab_tests add column if not exists result_kind    text not null default 'parameters';
 alter table public.lab_tests add column if not exists tat_hours      int;
 alter table public.lab_tests add column if not exists instructions   text;
@@ -1248,6 +1249,26 @@ begin
   end loop;
 end $$;
 
+-- Paediatric bands: added to starter parameters that have no child range yet
+-- (never touches ranges the lab already entered).
+create or replace function public._seed_peds(p_name text, p_bands jsonb) returns void
+language plpgsql as $$
+declare par record; b jsonb;
+begin
+  for par in
+    select pr.id from public.lab_parameters pr join public.lab_tests t on t.id = pr.test_id
+    where lower(pr.name) = lower(p_name) and t.is_starter
+      and not exists (select 1 from public.lab_reference_ranges r
+                      where r.parameter_id = pr.id and r.age_min_days < 6570)
+  loop
+    for b in select * from jsonb_array_elements(p_bands) loop
+      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note)
+      values (par.id, coalesce(b->>'g','any'), (b->>'a0')::int, (b->>'a1')::int,
+              (b->>'lo')::numeric, (b->>'hi')::numeric, b->>'x', 'Starter paediatric value — confirm for your method');
+    end loop;
+  end loop;
+end $$;
+
 create or replace function public._seed_package(p_code text, p_name text, p_order int, p_codes text[])
 returns void language plpgsql as $$
 begin
@@ -1387,7 +1408,7 @@ select public._seed_test($j${"code":"URE","name":"Urine Routine Examination","de
 select public._seed_test($j${"code":"UPT","name":"Urine Pregnancy Test","dept":"Clinical Pathology","sample":"Urine","container":"Sterile container","tat":1,"prep":"First morning urine gives the most reliable result.","order":1260,"params":[{"n":"Urine β-hCG","t":"option","o":"Negative,Positive","r":[]}]}$j$::jsonb);
 select public._seed_test($j${"code":"SRE","name":"Stool Routine Examination","dept":"Clinical Pathology","sample":"Stool","container":"Stool container","tat":3,"order":1270,"params":[{"n":"Colour","t":"option","o":"Brown,Yellow,Green,Black,Clay,Red","r":[{"x":"Brown"}],"s":"Physical"},{"n":"Consistency","t":"option","o":"Formed,Semi-formed,Loose,Watery,Mucoid","r":[{"x":"Formed"}],"s":"Physical"},{"n":"Mucus","t":"option","o":"Absent,Present","r":[{"x":"Absent"}],"s":"Physical"},{"n":"Blood","t":"option","o":"Absent,Present","r":[{"x":"Absent"}],"s":"Physical"},{"n":"Pus cells","t":"text","r":[{"x":"Nil"}],"s":"Microscopy"},{"n":"Red blood cells","t":"text","r":[{"x":"Nil"}],"s":"Microscopy"},{"n":"Ova","t":"text","r":[{"x":"Not seen"}],"s":"Microscopy"},{"n":"Cysts","t":"text","r":[{"x":"Not seen"}],"s":"Microscopy"},{"n":"Trophozoites","t":"text","r":[{"x":"Not seen"}],"s":"Microscopy"},{"n":"Others","t":"text","r":[],"s":"Microscopy"}]}$j$::jsonb);
 select public._seed_test($j${"code":"FOB","name":"Stool Occult Blood","dept":"Clinical Pathology","sample":"Stool","container":"Stool container","tat":3,"order":1280,"params":[{"n":"Occult blood","t":"option","o":"Negative,Positive","r":[{"x":"Negative"}]}]}$j$::jsonb);
-select public._seed_test($j${"code":"SEMEN","name":"Semen Analysis","dept":"Clinical Pathology","sample":"Semen","container":"Sterile container","tat":4,"prep":"2 to 7 days of abstinence. Collect the whole sample in the lab container and bring it within 30 minutes, kept at body temperature.","note":"Lower reference limits: WHO laboratory manual (6th edition, 2021).","order":1290,"auto":false,"params":[{"n":"Volume","u":"mL","d":1,"r":[{"a0":6570,"lo":1.4}],"s":"Physical"},{"n":"Liquefaction","t":"option","o":"Complete within 60 min,Incomplete","r":[{"x":"Complete within 60 min"}],"s":"Physical"},{"n":"pH","u":"","d":1,"r":[{"a0":6570,"lo":7.2,"hi":8}],"s":"Physical"},{"n":"Sperm concentration","u":"million/mL","d":0,"r":[{"a0":6570,"lo":16}],"s":"Sperm count"},{"n":"Total sperm count","u":"million/ejaculate","d":0,"r":[{"a0":6570,"lo":39}],"s":"Sperm count"},{"n":"Total motility (PR + NP)","u":"%","d":0,"r":[{"a0":6570,"lo":42}],"s":"Motility"},{"n":"Progressive motility (PR)","u":"%","d":0,"r":[{"a0":6570,"lo":30}],"s":"Motility"},{"n":"Non-progressive (NP)","u":"%","d":0,"r":[],"s":"Motility"},{"n":"Immotile","u":"%","d":0,"r":[],"s":"Motility"},{"n":"Normal forms","u":"%","d":0,"r":[{"a0":6570,"lo":4}],"s":"Morphology"},{"n":"Vitality","u":"%","d":0,"r":[{"a0":6570,"lo":54}],"s":"Morphology"},{"n":"Pus cells","t":"text","r":[],"s":"Other cells"},{"n":"Comment","t":"text","r":[]}]}$j$::jsonb);
+select public._seed_test($j${"code":"SEMEN","name":"Semen Analysis","dept":"Clinical Pathology","sample":"Semen","container":"Sterile container","tat":4,"prep":"2 to 7 days of abstinence. Collect the whole sample in the lab container and bring it within 30 minutes, kept at body temperature.","note":"Reference: WHO laboratory manual, 5th edition (2010) lower reference limits.","order":1290,"auto":false,"params":[{"n":"Abstinence period","t":"text","r":[],"s":"Sample"},{"n":"Colour","t":"option","o":"Greyish white,White,Yellowish,Brownish,Reddish","r":[{"x":"Greyish white"}],"s":"Physical"},{"n":"Semen volume","u":"mL","d":1,"r":[{"a0":6570,"lo":1.5}],"c":"VOL","s":"Physical"},{"n":"Viscosity","t":"option","o":"Normal,Increased","r":[{"x":"Normal"}],"s":"Physical"},{"n":"Liquefaction time","t":"option","o":"Complete within 60 min,Incomplete","r":[{"x":"Complete within 60 min"}],"s":"Physical"},{"n":"Semen pH","u":"","d":1,"r":[{"a0":6570,"lo":7.2,"hi":8}],"s":"Physical"},{"n":"Sperm count","u":"million/mL","d":0,"r":[{"a0":6570,"lo":15}],"c":"CONC","s":"Sperm count"},{"n":"Total count per ejaculate","u":"million","t":"calculated","f":"{CONC}*{VOL}","d":0,"r":[{"a0":6570,"lo":39}],"s":"Sperm count"},{"n":"Grade A (rapid progressive)","u":"%","d":0,"r":[],"c":"GA","s":"Motility"},{"n":"Grade B (slow progressive)","u":"%","d":0,"r":[],"c":"GB","s":"Motility"},{"n":"Grade C (non-progressive)","u":"%","d":0,"r":[],"c":"GC","s":"Motility"},{"n":"Grade D (immotile)","u":"%","d":0,"r":[],"c":"GD","s":"Motility"},{"n":"Total motility (A+B+C)","u":"%","t":"calculated","f":"{GA}+{GB}+{GC}","d":0,"r":[{"a0":6570,"lo":40}],"s":"Motility"},{"n":"Progressive motility (A+B)","u":"%","t":"calculated","f":"{GA}+{GB}","d":0,"r":[{"a0":6570,"lo":32}],"s":"Motility"},{"n":"Normal morphology","u":"%","d":0,"r":[{"a0":6570,"lo":4}],"c":"NORM","s":"Morphology"},{"n":"Abnormal forms","u":"%","t":"calculated","f":"100-{NORM}","d":0,"r":[{"a0":6570,"hi":96}],"s":"Morphology"},{"n":"Live sperm (vitality)","u":"%","d":0,"r":[{"a0":6570,"lo":58}],"s":"Morphology"},{"n":"Pus cells (WBC)","t":"text","r":[{"x":"0 – 5 /HPF"}],"s":"Microscopy"},{"n":"Red blood cells","t":"text","r":[{"x":"Nil"}],"s":"Microscopy"},{"n":"Round cells","t":"text","r":[],"s":"Microscopy"},{"n":"Agglutination","t":"option","o":"Nil,Present","r":[{"x":"Nil"}],"s":"Microscopy"},{"n":"Diagnosis","t":"option","o":"Normozoospermia,Oligozoospermia,Asthenozoospermia,Teratozoospermia,Oligoasthenozoospermia,Oligoasthenoteratozoospermia,Azoospermia,Cryptozoospermia,Aspermia,Necrozoospermia","r":[],"s":"Diagnosis"},{"n":"Comment / interpretation","t":"text","r":[],"s":"Diagnosis"}]}$j$::jsonb);
 select public._seed_test($j${"code":"CSF","name":"CSF Analysis","dept":"Clinical Pathology","sample":"CSF","container":"Sterile container","tat":4,"order":1300,"auto":false,"params":[{"n":"Appearance","t":"text","r":[{"x":"Clear, colourless"}]},{"n":"Total cells","u":"/µL","d":0,"r":[{"a0":6570,"lo":0,"hi":5}]},{"n":"Differential","t":"text","r":[]},{"n":"Protein","u":"mg/dL","d":0,"r":[{"a0":6570,"lo":15,"hi":45}]},{"n":"Glucose","u":"mg/dL","d":0,"r":[{"a0":6570,"lo":40,"hi":70}]},{"n":"Gram stain","t":"text","r":[]},{"n":"Comment","t":"text","r":[]}]}$j$::jsonb);
 select public._seed_test($j${"code":"FLUID","name":"Body Fluid Analysis (Pleural / Ascitic)","dept":"Clinical Pathology","sample":"Body fluid","container":"Sterile container","tat":6,"order":1310,"auto":false,"params":[{"n":"Type of fluid","t":"text","r":[]},{"n":"Appearance","t":"text","r":[]},{"n":"Total cells","u":"/µL","d":0,"r":[]},{"n":"Differential","t":"text","r":[]},{"n":"Protein","u":"g/dL","d":1,"r":[]},{"n":"Glucose","u":"mg/dL","d":0,"r":[]},{"n":"LDH","u":"U/L","d":0,"r":[]},{"n":"Comment","t":"text","r":[]}]}$j$::jsonb);
 select public._seed_test($j${"code":"UCS","name":"Urine Culture & Sensitivity","dept":"Microbiology","sample":"Urine","container":"Sterile container","tat":72,"prep":"Collect before starting antibiotics. Use the sterile container given by the lab. Mid-stream urine.","kind":"culture","order":1320,"auto":false,"params":[]}$j$::jsonb);
@@ -1412,6 +1433,77 @@ select public._seed_test($j${"code":"FCYTO","name":"Fluid Cytology","dept":"Hist
 select public._seed_test($j${"code":"XM","name":"Cross Match","dept":"Blood Bank","sample":"Whole blood","container":"EDTA (purple)","tat":2,"order":1510,"auto":false,"params":[{"n":"Donor bag / unit no.","t":"text","r":[]},{"n":"Donor group","t":"option","o":"A+,A-,B+,B-,AB+,AB-,O+,O-","r":[]},{"n":"Cross match","t":"option","o":"Compatible,Incompatible","r":[{"x":"Compatible"}]}]}$j$::jsonb);
 select public._seed_test($j${"code":"DCT","name":"Direct Coombs Test","dept":"Blood Bank","sample":"Whole blood","container":"EDTA (purple)","tat":3,"order":1520,"params":[{"n":"Direct Coombs (DAT)","t":"option","o":"Negative,Positive","r":[{"x":"Negative"}]}]}$j$::jsonb);
 select public._seed_test($j${"code":"ICT","name":"Indirect Coombs Test","dept":"Blood Bank","sample":"Serum","container":"Gel / Red","tat":4,"order":1530,"params":[{"n":"Indirect Coombs (IAT)","t":"option","o":"Negative,Positive","r":[{"x":"Negative"}]}]}$j$::jsonb);
+select public._seed_peds('Haemoglobin', $j$[{"a0":0,"a1":30,"g":null,"lo":14,"hi":22,"x":null},{"a0":30,"a1":365,"g":null,"lo":10,"hi":13.5,"x":null},{"a0":365,"a1":4380,"g":null,"lo":11.5,"hi":14.5,"x":null},{"a0":4380,"a1":6570,"g":"male","lo":13,"hi":16,"x":null},{"a0":4380,"a1":6570,"g":"female","lo":12,"hi":15,"x":null}]$j$::jsonb);
+select public._seed_peds('RBC count', $j$[{"a0":0,"a1":30,"g":null,"lo":4,"hi":6.6,"x":null},{"a0":30,"a1":365,"g":null,"lo":3.5,"hi":5.1,"x":null},{"a0":365,"a1":4380,"g":null,"lo":4,"hi":5.2,"x":null},{"a0":4380,"a1":6570,"g":"male","lo":4.3,"hi":5.5,"x":null},{"a0":4380,"a1":6570,"g":"female","lo":3.9,"hi":5,"x":null}]$j$::jsonb);
+select public._seed_peds('Haematocrit (HCT)', $j$[{"a0":0,"a1":30,"g":null,"lo":42,"hi":65,"x":null},{"a0":30,"a1":365,"g":null,"lo":30,"hi":42,"x":null},{"a0":365,"a1":4380,"g":null,"lo":34,"hi":43,"x":null},{"a0":4380,"a1":6570,"g":"male","lo":37,"hi":49,"x":null},{"a0":4380,"a1":6570,"g":"female","lo":35,"hi":45,"x":null}]$j$::jsonb);
+select public._seed_peds('MCV', $j$[{"a0":0,"a1":30,"g":null,"lo":95,"hi":121,"x":null},{"a0":30,"a1":365,"g":null,"lo":70,"hi":90,"x":null},{"a0":365,"a1":4380,"g":null,"lo":75,"hi":87,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":78,"hi":96,"x":null}]$j$::jsonb);
+select public._seed_peds('MCH', $j$[{"a0":0,"a1":30,"g":null,"lo":31,"hi":37,"x":null},{"a0":30,"a1":365,"g":null,"lo":23,"hi":31,"x":null},{"a0":365,"a1":4380,"g":null,"lo":24,"hi":30,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":25,"hi":33,"x":null}]$j$::jsonb);
+select public._seed_peds('MCHC', $j$[{"a0":0,"a1":30,"g":null,"lo":30,"hi":36,"x":null},{"a0":30,"a1":365,"g":null,"lo":29,"hi":37,"x":null},{"a0":365,"a1":4380,"g":null,"lo":31,"hi":37,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":31,"hi":36,"x":null}]$j$::jsonb);
+select public._seed_peds('Total WBC count', $j$[{"a0":0,"a1":30,"g":null,"lo":9,"hi":30,"x":null},{"a0":30,"a1":365,"g":null,"lo":6,"hi":17.5,"x":null},{"a0":365,"a1":4380,"g":null,"lo":5,"hi":15,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":4.5,"hi":13.5,"x":null}]$j$::jsonb);
+select public._seed_peds('Neutrophils', $j$[{"a0":30,"a1":365,"g":null,"lo":20,"hi":45,"x":null},{"a0":365,"a1":4380,"g":null,"lo":30,"hi":60,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":40,"hi":70,"x":null}]$j$::jsonb);
+select public._seed_peds('Lymphocytes', $j$[{"a0":30,"a1":365,"g":null,"lo":45,"hi":75,"x":null},{"a0":365,"a1":4380,"g":null,"lo":30,"hi":55,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":25,"hi":45,"x":null}]$j$::jsonb);
+select public._seed_peds('Platelet count', $j$[{"a0":0,"a1":30,"g":null,"lo":150,"hi":450,"x":null},{"a0":30,"a1":365,"g":null,"lo":150,"hi":450,"x":null},{"a0":365,"a1":4380,"g":null,"lo":150,"hi":450,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":150,"hi":450,"x":null}]$j$::jsonb);
+select public._seed_peds('ESR (1st hour)', $j$[{"a0":0,"a1":30,"g":null,"lo":0,"hi":2,"x":null},{"a0":30,"a1":365,"g":null,"lo":0,"hi":10,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0,"hi":10,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0,"hi":15,"x":null}]$j$::jsonb);
+select public._seed_peds('Alkaline phosphatase', $j$[{"a0":0,"a1":30,"g":null,"lo":75,"hi":320,"x":null},{"a0":30,"a1":365,"g":null,"lo":80,"hi":400,"x":null},{"a0":365,"a1":4380,"g":null,"lo":100,"hi":350,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":80,"hi":400,"x":null}]$j$::jsonb);
+select public._seed_peds('Creatinine', $j$[{"a0":0,"a1":30,"g":null,"lo":0.3,"hi":1,"x":null},{"a0":30,"a1":365,"g":null,"lo":0.2,"hi":0.4,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0.3,"hi":0.7,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0.5,"hi":1,"x":null}]$j$::jsonb);
+select public._seed_peds('Urea', $j$[{"a0":0,"a1":30,"g":null,"lo":10,"hi":40,"x":null},{"a0":30,"a1":365,"g":null,"lo":10,"hi":36,"x":null},{"a0":365,"a1":4380,"g":null,"lo":12,"hi":38,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":15,"hi":40,"x":null}]$j$::jsonb);
+select public._seed_peds('Calcium', $j$[{"a0":0,"a1":30,"g":null,"lo":7.6,"hi":10.4,"x":null},{"a0":30,"a1":365,"g":null,"lo":9,"hi":11,"x":null},{"a0":365,"a1":4380,"g":null,"lo":8.8,"hi":10.8,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":8.4,"hi":10.2,"x":null}]$j$::jsonb);
+select public._seed_peds('Phosphorus', $j$[{"a0":0,"a1":30,"g":null,"lo":4.8,"hi":8.2,"x":null},{"a0":30,"a1":365,"g":null,"lo":4.5,"hi":6.7,"x":null},{"a0":365,"a1":4380,"g":null,"lo":3.9,"hi":6.5,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":3,"hi":5.4,"x":null}]$j$::jsonb);
+select public._seed_peds('Total bilirubin', $j$[{"a0":0,"a1":30,"g":null,"lo":null,"hi":null,"x":"Newborn: interpret by age in hours/days (neonatal chart)"},{"a0":30,"a1":365,"g":null,"lo":0.2,"hi":1,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0.2,"hi":1,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0.3,"hi":1.2,"x":null}]$j$::jsonb);
+select public._seed_peds('Direct bilirubin', $j$[{"a0":0,"a1":30,"g":null,"lo":0,"hi":0.6,"x":null},{"a0":30,"a1":365,"g":null,"lo":0,"hi":0.3,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0,"hi":0.3,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0,"hi":0.3,"x":null}]$j$::jsonb);
+select public._seed_peds('Fasting blood glucose', $j$[{"a0":0,"a1":30,"g":null,"lo":40,"hi":90,"x":null},{"a0":30,"a1":365,"g":null,"lo":60,"hi":100,"x":null},{"a0":365,"a1":4380,"g":null,"lo":70,"hi":100,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":70,"hi":100,"x":null}]$j$::jsonb);
+select public._seed_peds('Random blood glucose', $j$[{"a0":0,"a1":30,"g":null,"lo":40,"hi":90,"x":null},{"a0":30,"a1":365,"g":null,"lo":60,"hi":140,"x":null},{"a0":365,"a1":4380,"g":null,"lo":70,"hi":140,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":70,"hi":140,"x":null}]$j$::jsonb);
+select public._seed_peds('TSH', $j$[{"a0":0,"a1":30,"g":null,"lo":null,"hi":null,"x":"Newborn: use age-specific chart for your method"},{"a0":30,"a1":365,"g":null,"lo":0.8,"hi":8.2,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0.7,"hi":6,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0.5,"hi":5,"x":null}]$j$::jsonb);
+select public._seed_peds('Free T4', $j$[{"a0":0,"a1":30,"g":null,"lo":null,"hi":null,"x":"Newborn: use age-specific chart for your method"},{"a0":30,"a1":365,"g":null,"lo":0.9,"hi":2.3,"x":null},{"a0":365,"a1":4380,"g":null,"lo":0.8,"hi":2,"x":null},{"a0":4380,"a1":6570,"g":null,"lo":0.8,"hi":1.9,"x":null}]$j$::jsonb);
+update public.lab_tests set aliases = 'sperm, sperm test, sperm count, semen, SFA, fertility, male fertility' where code = 'SEMEN' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'blood count, cbc, complete blood, blood picture, khoon' where code = 'CBC' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'hb, hemoglobin, haemoglobin, khoon, blood' where code = 'HB' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'esr, sed rate' where code = 'ESR' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'sugar, fasting sugar, fbs, glucose, blood sugar fasting' where code = 'BSF' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'sugar, random sugar, rbs, glucose' where code = 'BSR' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'sugar, pp sugar, post meal, 2hr sugar, ppbs' where code = 'BSPP' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'hba1c, a1c, sugar average, diabetes, 3 month sugar' where code = 'HBA1C' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'liver, liver test, jigar, jaundice, bilirubin, sgpt, alt, ast' where code = 'LFT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'kidney, kidney test, gurda, renal, urea creatinine, kft' where code = 'RFT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'cholesterol, lipid, fats, triglycerides, ldl hdl' where code = 'LIPID' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'thyroid, thyroid test, tsh' where code = 'TSH' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'thyroid, thyroid profile, t3 t4 tsh' where code = 'TFT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'urine, urine r/e, urine test, urine routine, pishab, dc' where code = 'URE' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'urine culture, urine c/s, pishab culture, culture' where code = 'UCS' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'typhoid, widal, typhoid test, enteric fever, fever' where code = 'WIDAL' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'typhoid, typhidot, typhoid test, fever' where code = 'TYPHI' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'malaria, mp, malaria parasite, fever' where code = 'MP' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'dengue, ns1, dengue test, fever' where code = 'DENGNS1' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'dengue, igm igg, dengue antibodies' where code = 'DENGAB' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'hepatitis b, hbsag, hep b, jaundice, kala yaraqan' where code = 'HBSAG' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'hepatitis c, hcv, anti hcv, hep c' where code = 'HCV' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'hiv, aids, hiv test' where code = 'HIV' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'vitamin d, vit d, 25 oh, vitamin d3' where code = 'VITD' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'vitamin b12, b12, cobalamin' where code = 'B12' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'crp, c reactive protein, infection, inflammation' where code = 'CRP' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'uric acid, gout, gout test' where code = 'UA' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'creatinine, kidney, gurda' where code = 'CREAT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'urea, kidney' where code = 'UREA' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'electrolytes, sodium potassium, na k' where code = 'ELEC' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'calcium, ca' where code = 'CA' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'ferritin, iron store, iron' where code = 'FERR' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'iron, serum iron, tibc' where code = 'IRON' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'pt inr, prothrombin, inr, blood thinning' where code = 'PT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'aptt, ptt, clotting' where code = 'APTT' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'blood group, blood type, rh factor' where code = 'BG' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'psa, prostate' where code = 'PSA' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'pregnancy, pregnancy test, hcg, urine pregnancy' where code = 'PREG' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'beta hcg, pregnancy, hcg' where code = 'BHCG' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'stool, stool test, stool r/e, pakhana, motion' where code = 'STOOL' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'amh, ovarian reserve, fertility' where code = 'AMH' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'prolactin, prl' where code = 'PRL' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'lh, hormone' where code = 'LH' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'fsh, hormone' where code = 'FSH' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'estradiol, e2, oestrogen' where code = 'E2' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'testosterone, male hormone' where code = 'TESTO' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'biopsy, histopathology, tissue' where code = 'HISTS' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'pap smear, cervical screening' where code = 'PAP' and is_starter and aliases is null;
+update public.lab_tests set aliases = 'fnac, aspiration, lump' where code = 'FNAC' and is_starter and aliases is null;
 select public._seed_package('PKG-FULL', 'Full Body Checkup', 5000, array['CBC','ESR','LFT','RFT','LIPID','BSF','HBA1C','TSH','URE','VITD','B12']);
 select public._seed_package('PKG-DM', 'Diabetes Profile', 5001, array['BSF','HBA1C','RFT','LIPID','MALB','URE']);
 select public._seed_package('PKG-CARD', 'Cardiac Profile', 5002, array['LIPID','CKMB','TROPI','HSCRP']);
@@ -1515,7 +1607,17 @@ update public.lab_tests t set template_id = r.id from public.report_templates r
    or (t.code = 'PAP' and r.name = 'Pap smear (Bethesda)') or (t.code = 'FNAC' and r.name = 'FNAC — standard')
    or (t.code = 'FCYTO' and r.name = 'Fluid cytology'));
 
+-- Semen Analysis moved to the grade A/B/C/D format: hide the old starter
+-- parameters (only if the lab has not reviewed this test; results are kept).
+update public.lab_parameters p set active = false
+from public.lab_tests t
+where t.id = p.test_id and t.code = 'SEMEN' and t.is_starter and not t.ranges_reviewed
+  and p.name in ('Volume','Liquefaction','pH','Sperm concentration','Total sperm count','Total motility (PR + NP)',
+                 'Progressive motility (PR)','Non-progressive (NP)','Immotile','Normal forms','Vitality','Pus cells','Comment')
+  and exists (select 1 from public.lab_parameters n where n.test_id = t.id and n.name = 'Semen volume');
+
 drop function if exists public._seed_test(jsonb);
+drop function if exists public._seed_peds(text, jsonb);
 drop function if exists public._seed_package(text, text, int, text[]);
 drop function if exists public._pol(text,text,text,text,text);
 

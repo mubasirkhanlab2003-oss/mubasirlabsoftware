@@ -102,3 +102,33 @@ describe('QC Westgard', () => {
     expect(westgard(runs(Array(10).fill(100.4)), 100, 1).rules).toContain('10x');
   });
 });
+
+import { findRange as _findRange } from '../src/lib/results.js';
+describe('paediatric ranges', () => {
+  const ranges = [
+    { gender: 'any', age_min_days: 30, age_max_days: 365, low: 10, high: 13.5 },
+    { gender: 'any', age_min_days: 365, age_max_days: 4380, low: 11.5, high: 14.5 },
+    { gender: 'male', age_min_days: 6570, age_max_days: null, low: 13, high: 17 },
+  ];
+  it('picks the band for a 3-year-old and none gap-free errors', () => {
+    const dob = new Date(Date.now() - 3 * 365.25 * 864e5).toISOString().slice(0, 10);
+    expect(_findRange(ranges, { dob, gender: 'male' })?.high).toBe(14.5);
+  });
+  it('picks infant band for 6 months', () => {
+    const dob = new Date(Date.now() - 180 * 864e5).toISOString().slice(0, 10);
+    expect(_findRange(ranges, { dob, gender: 'female' })?.high).toBe(13.5);
+  });
+});
+
+import { searchTests } from '../src/components/TestPicker.jsx';
+describe('test search', () => {
+  const T = [
+    { id: 1, code: 'SEMEN', name: 'Semen Analysis', aliases: 'sperm, fertility' },
+    { id: 2, code: 'CBC', name: 'Complete Blood Count (CBC)' },
+    { id: 3, code: 'BSF', name: 'Blood Sugar (Fasting)', aliases: 'sugar, fbs' },
+    { id: 4, code: 'PKG-FULL', name: 'Full Body Checkup', kind: 'package' },
+  ];
+  it('finds by other name', () => expect(searchTests(T, 'sperm')[0].code).toBe('SEMEN'));
+  it('code first, then name', () => { expect(searchTests(T, 'cb')[0].code).toBe('CBC'); expect(searchTests(T, 'sugar')[0].code).toBe('BSF'); });
+  it('empty query gives nothing', () => expect(searchTests(T, ' ')).toEqual([]));
+});

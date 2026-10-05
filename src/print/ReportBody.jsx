@@ -22,7 +22,7 @@ export function LabHeader({ lab, qr, qrLabel, letterhead }) {
   const contact = [lab?.phone && `Ph: ${lab.phone}`, lab?.whatsapp && `WhatsApp: ${lab.whatsapp}`, lab?.email, lab?.website].filter(Boolean).join('  |  ');
   return (
     <div className="doc-head">
-      {lab?.logo && <img src={lab.logo} alt="" width="70" height="70" />}
+      {lab?.logo && <img src={lab.logo} alt="" width="84" height="84" />}
       <div className="lab">
         <h1>{lab?.lab_name || 'Laboratory'}</h1>
         {lab?.tagline && <div style={{ fontWeight: 700 }}>{lab.tagline}</div>}
@@ -30,7 +30,7 @@ export function LabHeader({ lab, qr, qrLabel, letterhead }) {
         {contact && <div>{contact}</div>}
         {lab?.working_hours && <div>{lab.working_hours}</div>}
       </div>
-      {qr && <div className="qr"><img src={qr} alt="" width="78" height="78" /><div>{qrLabel}</div></div>}
+      {qr && <div className="qr"><img src={qr} alt="" width="92" height="92" /><div>{qrLabel}</div></div>}
     </div>
   );
 }
@@ -59,7 +59,8 @@ function ParamTable({ t }) {
   let lastSec = null;
   return (
     <table className="doc">
-      <thead><tr><th style={{ width: '38%' }}>Test</th><th>Result</th><th>Flag</th><th>Unit</th><th>Reference range</th></tr></thead>
+      <colgroup><col style={{ width: '36%' }} /><col style={{ width: '17%' }} /><col style={{ width: '7%' }} /><col style={{ width: '15%' }} /><col style={{ width: '25%' }} /></colgroup>
+      <thead><tr><th>Test</th><th>Result</th><th>Flag</th><th>Unit</th><th>Reference range</th></tr></thead>
       <tbody>
         {rows.map((r) => {
           const sec = r.section && r.section !== lastSec ? r.section : null;
@@ -67,7 +68,7 @@ function ParamTable({ t }) {
           const out = r.flag && r.flag !== 'normal';
           return [
             sec && <tr key={'s' + (r.parameter_id || r.name)} className="sec"><td colSpan={5}>{sec}</td></tr>,
-            <tr key={r.parameter_id || r.name}>
+            <tr key={r.parameter_id || r.name} className={out || r.critical ? 'abn' : ''}>
               <td>{r.name}</td>
               <td className={`v ${out || r.critical ? 'hl' : ''}`}>{r.value}</td>
               <td className={out || r.critical ? 'hl' : ''}>{flagMark(r)}</td>

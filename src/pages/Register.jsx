@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db.js';
@@ -8,6 +8,7 @@ import { useDoctors, usePanels, usePatient, useSettings, useTests } from '../lib
 import { PAYMENT_METHODS } from '../lib/pricing.js';
 import { round2, todayISO } from '../lib/format.js';
 import { Field, Modal, Money, useAction, useMoney } from '../components/ui.jsx';
+import TestPicker from '../components/TestPicker.jsx';
 import { PatientForm, PatientSearch, patientLine, patientName } from '../components/patients.jsx';
 
 // One screen: patient → who sent them → tests → bill and payment → save.
@@ -27,8 +28,6 @@ export default function Register() {
   const m = useMoney();
 
   const [sel, setSel] = useState([]);
-  const [q, setQ] = useState('');
-  const [dept, setDept] = useState('');
   const [doctorId, setDoctorId] = useState('');
   const [doctorText, setDoctorText] = useState('');
   const [panelId, setPanelId] = useState('');
@@ -62,10 +61,6 @@ export default function Register() {
   const payNow = panelCredit ? 0 : (pay === null ? total : Number(pay || 0));
   const unpriced = lines.filter((l) => l.test.price == null && !panelId);
 
-  const depts = useMemo(() => [...new Set(tests.map((t) => t.category || 'General'))].sort((a, b) => (a === 'Packages' ? -1 : b === 'Packages' ? 1 : a.localeCompare(b))), [tests]);
-  const s = q.trim().toLowerCase();
-  const shown = tests.filter((t) => (!dept || (t.category || 'General') === dept)
-    && (!s || t.name.toLowerCase().includes(s) || (t.code || '').toLowerCase().startsWith(s)));
   const toggle = (id) => setSel((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
   const selTests = sel.map((id) => tests.find((t) => t.id === id)).filter(Boolean);
   const instructions = [...new Set(lines.map((l) => l.test.instructions).filter(Boolean))];
@@ -161,22 +156,8 @@ export default function Register() {
           </div>
 
           <div className="panel">
-            <div className="panel-head"><h2>Tests</h2><div className="grow" /><span className="faint">Type a code or name, press Enter to add</span></div>
-            <input ref={qRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. CBC, LFT, sugar, thyroid…"
-              onKeyDown={(e) => { if (e.key === 'Enter' && shown[0]) { e.preventDefault(); if (!sel.includes(shown[0].id)) toggle(shown[0].id); setQ(''); } }} />
-            <div className="chips" style={{ margin: '10px 0' }}>
-              <button className={`chip ${!dept ? 'on' : ''}`} onClick={() => setDept('')}>All</button>
-              {depts.map((d) => <button key={d} className={`chip ${dept === d ? 'on' : ''}`} onClick={() => setDept(d)}>{d}</button>)}
-            </div>
-            <div className="test-pick">
-              {shown.map((t) => (
-                <button key={t.id} className={sel.includes(t.id) ? 'on' : ''} onClick={() => toggle(t.id)}>
-                  <span className="code">{t.code}</span><span>{t.name}</span>
-                  <span className="p">{t.price == null ? 'no price' : m(t.price)}</span>
-                </button>
-              ))}
-              {!shown.length && <div className="empty">No test matches. Add tests in Settings → Tests & prices.</div>}
-            </div>
+            <div className="panel-head"><h2>Tests</h2><div className="grow" /><span className="faint">Type to search, press Enter to add</span></div>
+            <TestPicker tests={tests} sel={sel} toggle={toggle} money={m} qRef={qRef} />
           </div>
         </div>
 
@@ -186,11 +167,12 @@ export default function Register() {
             {!lines.length && <p className="muted">Tests you choose appear here with their price.</p>}
             <div className="bill-lines">
               {selTests.map((t) => {
-                const mine = lines.filter((l) => l.test.id === t.id || l.package_id === t.id);
+                const mine = lines.filter((l) => (t.kind === 'package' ? l.package_id === t.id : (l.test.id === t.id && !l.package_id)));
                 const amt = round2(mine.reduce((s2, l) => s2 + Number(l.price || 0), 0));
+                const inPkg = !mine.length && t.kind !== 'package' ? selTests.find((x) => x.kind === 'package' && (x.components || []).includes(t.id)) : null;
                 return (
                   <div className="bill-line" key={t.id}>
-                    <div className="n"><b>{t.name}</b>{t.kind === 'package' && <div className="faint">{mine.map((l) => l.test.code).join(', ')}</div>}</div>
+                    <div className="n"><b>{t.name}</b>{inPkg && <div className="faint">Already included in {inPkg.name} — not charged twice</div>}{t.kind === 'package' && <div className="faint">{mine.map((l) => l.test.code).join(', ')}</div>}</div>
                     <Money v={amt} />
                     <button className="btn small ghost" onClick={() => toggle(t.id)} aria-label={`Remove ${t.name}`}>✕</button>
                   </div>

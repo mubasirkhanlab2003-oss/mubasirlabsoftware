@@ -65,6 +65,12 @@ async function main(withOld) {
   ok(calc.n >= 15, 'calculated parameters seeded');
   const ab = await one(`select count(*)::int n from antibiotics`);
   ok(ab.n >= 40, 'antibiotics seeded');
+  const al = (await db.query(`select aliases from lab_tests where code='SEMEN'`)).rows[0];
+  ok(/sperm/.test(al?.aliases || ''), 'semen test has search aliases');
+  const ped = (await db.query(`select count(*)::int n from lab_reference_ranges r join lab_parameters p on p.id=r.parameter_id where p.name='Haemoglobin' and r.age_min_days < 6570`)).rows[0];
+  ok(ped.n >= 10, 'paediatric Hb bands seeded for CBC + Hb test, got ' + ped.n);
+  const kid = (await db.query(`select count(*)::int n from lab_reference_ranges r join lab_parameters p on p.id=r.parameter_id join lab_tests t on t.id=p.test_id where t.code='CREAT' and p.name='Creatinine' and r.age_min_days=365 and r.high=0.7`)).rows[0];
+  ok(kid.n === 1, 'child creatinine band exists once');
 
   if (withOld) {
     const acc = await one(`select a.acc_number, public.acc_total(a.id) tot, public.acc_paid(a.id) paid, a.doctor_text,

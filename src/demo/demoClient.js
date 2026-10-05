@@ -1,6 +1,7 @@
 // DEVELOPMENT ONLY (VITE_DEMO=1): an in-browser imitation of Supabase with a
 // seeded catalogue, used to click through the app and take screenshots
 // without a real server. Never included in a normal build.
+import { ALIASES } from '../../sql/aliases.mjs';
 import { TESTS, PACKAGES, ANTIBIOTICS, TEMPLATES } from '../../sql/catalogue.mjs';
 
 // Deterministic ids, so reloading the page does not duplicate the seed.
@@ -14,12 +15,12 @@ function seed(T) {
   put('profiles', { id: ADMIN, email: 'owner@lab.pk', full_name: 'Lab Owner', role: 'admin', active: true });
   put('lab_settings', { id: 1, lab_name: 'Al-Shifa Diagnostic Laboratory', tagline: 'Pathology & Diagnostic Services', address: 'Main Bazar Road, Mardan', phone: '0937-123456', whatsapp: '0300-1234567', currency: 'Rs', phone_country_code: '92', report_mode: 'full', receipt_format: 'a4', label_width_mm: 50, label_height_mm: 25, commission_basis: 'net', commission_needs_payment: false, report_needs_payment: false, auto_verify: true, home_charge: 300, sample_keep_days: 7, backup_reminder_days: 7, expense_categories: ['Rent', 'Electricity', 'Salaries', 'Reagents & kits', 'Other'], letterhead_top_mm: 45, letterhead_bottom_mm: 25, report_footer: 'Results relate only to the sample tested. Please correlate clinically.' });
   put('pathologists', { id: uid(), full_name: 'Dr. Ayesha Rahman', qualification: 'MBBS, FCPS (Chemical Pathology)', designation: 'Consultant Pathologist', is_default: true, active: true, sort_order: 1 });
-  const PRICES = { CBC: 800, ESR: 300, LFT: 1500, RFT: 1500, BSF: 200, BSR: 200, HBA1C: 1500, LIPID: 1600, TSH: 1200, URE: 400, VITD: 3500, B12: 2800, CRP: 900, TYPHI: 900, MP: 300, HBSAG: 600, HCV: 600, UCS: 1800, ELEC: 1200, FERR: 2200, 'PKG-FULL': 9500, 'PKG-FEVER': 2900 };
+  const PRICES = { CBC: 800, SEMEN: 1500, WIDAL: 700, ESR: 300, LFT: 1500, RFT: 1500, BSF: 200, BSR: 200, HBA1C: 1500, LIPID: 1600, TSH: 1200, URE: 400, VITD: 3500, B12: 2800, CRP: 900, TYPHI: 900, MP: 300, HBSAG: 600, HCV: 600, UCS: 1800, ELEC: 1200, FERR: 2200, 'PKG-FULL': 9500, 'PKG-FEVER': 2900 };
   const byCode = {};
   let order = 0;
   for (const t of TESTS) {
     const id = uid(); byCode[t.code] = id;
-    put('lab_tests', { id, code: t.code, name: t.name, category: t.dept, sample_type: t.sample, container: t.container, tat_hours: t.tat, instructions: t.prep || null, result_kind: t.kind || 'parameters', method: t.method || null, report_note: t.note || null, price: PRICES[t.code] ?? null, active: true, sort_order: (order += 10), kind: 'test', components: [], auto_verify: t.auto !== false, is_starter: true, ranges_reviewed: false });
+    put('lab_tests', { id, code: t.code, name: t.name, category: t.dept, sample_type: t.sample, container: t.container, tat_hours: t.tat, instructions: t.prep || null, result_kind: t.kind || 'parameters', method: t.method || null, report_note: t.note || null, price: PRICES[t.code] ?? null, aliases: ALIASES[t.code] || null, active: true, sort_order: (order += 10), kind: 'test', components: [], auto_verify: t.auto !== false, is_starter: true, ranges_reviewed: false });
     t.params.forEach((p, i) => {
       const pid = uid();
       put('lab_parameters', { id: pid, test_id: id, name: p.n, code: p.c || null, unit: p.u || null, result_type: p.t || 'numeric', options: p.o || null, decimals: p.d ?? 1, sort_order: i + 1, formula: p.f || null, critical_low: p.cl ?? null, critical_high: p.ch ?? null, delta_pct: p.dp ?? null, reflex: p.rx || null, section: p.s || null, active: true });

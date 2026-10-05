@@ -189,6 +189,11 @@ export default function Layout() {
             <button onClick={toggleTheme} title="Light / dark"><Icon name="moon" size={14} /> {dark ? 'Light' : 'Dark'}</button>
             <button onClick={() => signOut()}>Sign out</button>
           </div>
+          {/LabLISApp/.test(navigator.userAgent) && (
+            <div className="row" style={{ marginTop: 6 }}>
+              <button onClick={() => { window.location.href = 'https://localhost/?change=1'; }}>Change lab address</button>
+            </div>
+          )}
         </div>
       </aside>
       {open && <button className="side-backdrop no-print" aria-label="Close menu" onClick={() => setOpen(false)} />}

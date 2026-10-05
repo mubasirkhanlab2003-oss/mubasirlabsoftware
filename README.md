@@ -47,7 +47,7 @@ React app that works offline + Supabase (PostgreSQL, sign-in, row level security
 ### 3. First use
 Sign in. The yellow *Finish setting up* box lists what is missing:
 * **Settings → Lab details**: name, address, phone, logo, and the **web address of this app** (used in QR codes and WhatsApp links).
-* **Settings → Tests & prices**: 153 tests and 10 packages are loaded **without prices** — type prices for the tests you do and switch off the rest. Reference ranges are starter adult values: check them for your analyser and tick *Reviewed*.
+* **Settings → Tests & prices**: 153 tests and 10 packages are loaded **without prices** — type prices for the tests you do and switch off the rest. Reference ranges are starter values (adult, plus newborn/infant/child/adolescent bands for common tests, picked automatically from the patient date of birth): check them for your analyser and tick *Reviewed*.
 * **Settings → Pathologists**: name, qualification, signature photo.
 * **Doctors**: add referring doctors and their commission.
 

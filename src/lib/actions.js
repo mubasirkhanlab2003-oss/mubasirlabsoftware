@@ -102,7 +102,9 @@ export async function expandSelection(testIds, panelId, existingTestIds = []) {
   const byId = Object.fromEntries(catalog.map((t) => [t.id, t]));
   const have = new Set(existingTestIds);
   const lines = [];
-  for (const id of testIds) {
+  // packages first: a test inside a chosen package is covered by it, whatever order they were clicked in
+  const ordered = [...testIds].sort((a, b) => (byId[b]?.kind === 'package' ? 1 : 0) - (byId[a]?.kind === 'package' ? 1 : 0));
+  for (const id of ordered) {
     const t = byId[id];
     if (!t) continue;
     if (t.kind === 'package') {

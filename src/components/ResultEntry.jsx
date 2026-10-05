@@ -61,7 +61,7 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
   const deltas = kind === 'parameters' ? deltaChecks(active, results, Object.fromEntries(active.map((p) => [p.id, prevFor(p)]).filter(([, v]) => v))) : [];
   const reflex = kind === 'parameters' ? reflexSuggestions(active, results) : [];
   const invalid = active.filter((p) => p.result_type === 'numeric' && !numericValid(vals[p.id]));
-  const empty = kind === 'parameters' ? results.filter((r) => r.value === '' && !r.calculated).length
+  const empty = kind === 'parameters' ? results.filter((r) => r.value === '' && !r.calculated && !r.optional).length
     : kind === 'culture' ? (cultureComplete(culture) ? 0 : 1) : (text.trim() ? 0 : 1);
   const mayVerify = isAdmin || can('verify');
   const autoBlock = kind === 'parameters' ? autoVerifyReason(test, results, deltas, settings?.auto_verify) : 'Needs manual verification';

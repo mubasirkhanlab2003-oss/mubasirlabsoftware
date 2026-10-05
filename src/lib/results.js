@@ -133,7 +133,7 @@ export function buildResults(params, values, rangesByParam, patient, at = new Da
       value: value === null ? '' : String(value), unit: p.unit || '',
       ref_low: r?.low ?? null, ref_high: r?.high ?? null, ref_text: rangeText(r),
       flag: flagFor(p, value, r), critical: criticalFor(p, value),
-      calculated: p.result_type === 'calculated' || undefined,
+      calculated: p.result_type === 'calculated' || undefined, optional: p.result_type === 'text' || undefined,
     });
   }
   return out;

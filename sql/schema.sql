@@ -212,6 +212,7 @@ create unique index if not exists lab_tests_name_uq on public.lab_tests (lower(n
 alter table public.lab_tests add column if not exists kind           text not null default 'test';
 alter table public.lab_tests add column if not exists components     jsonb not null default '[]'::jsonb;
 alter table public.lab_tests add column if not exists container      text;
+alter table public.lab_tests add column if not exists aliases        text;   -- other names people search by (e.g. 'sperm' for Semen Analysis)
 alter table public.lab_tests add column if not exists result_kind    text not null default 'parameters';
 alter table public.lab_tests add column if not exists tat_hours      int;
 alter table public.lab_tests add column if not exists instructions   text;
@@ -1248,6 +1249,26 @@ begin
   end loop;
 end $$;
 
+-- Paediatric bands: added to starter parameters that have no child range yet
+-- (never touches ranges the lab already entered).
+create or replace function public._seed_peds(p_name text, p_bands jsonb) returns void
+language plpgsql as $$
+declare par record; b jsonb;
+begin
+  for par in
+    select pr.id from public.lab_parameters pr join public.lab_tests t on t.id = pr.test_id
+    where lower(pr.name) = lower(p_name) and t.is_starter
+      and not exists (select 1 from public.lab_reference_ranges r
+                      where r.parameter_id = pr.id and r.age_min_days < 6570)
+  loop
+    for b in select * from jsonb_array_elements(p_bands) loop
+      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note)
+      values (par.id, coalesce(b->>'g','any'), (b->>'a0')::int, (b->>'a1')::int,
+              (b->>'lo')::numeric, (b->>'hi')::numeric, b->>'x', 'Starter paediatric value — confirm for your method');
+    end loop;
+  end loop;
+end $$;
+
 create or replace function public._seed_package(p_code text, p_name text, p_order int, p_codes text[])
 returns void language plpgsql as $$
 begin
@@ -1260,7 +1281,17 @@ end $$;
 
 -- @@SEED@@
 
+-- Semen Analysis moved to the grade A/B/C/D format: hide the old starter
+-- parameters (only if the lab has not reviewed this test; results are kept).
+update public.lab_parameters p set active = false
+from public.lab_tests t
+where t.id = p.test_id and t.code = 'SEMEN' and t.is_starter and not t.ranges_reviewed
+  and p.name in ('Volume','Liquefaction','pH','Sperm concentration','Total sperm count','Total motility (PR + NP)',
+                 'Progressive motility (PR)','Non-progressive (NP)','Immotile','Normal forms','Vitality','Pus cells','Comment')
+  and exists (select 1 from public.lab_parameters n where n.test_id = t.id and n.name = 'Semen volume');
+
 drop function if exists public._seed_test(jsonb);
+drop function if exists public._seed_peds(text, jsonb);
 drop function if exists public._seed_package(text, text, int, text[]);
 drop function if exists public._pol(text,text,text,text,text);
 

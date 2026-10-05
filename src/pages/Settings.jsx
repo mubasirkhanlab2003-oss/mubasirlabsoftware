@@ -194,7 +194,7 @@ function TestModal({ t, manage, onClose }) {
     const out = {
       code: f.code.trim().toUpperCase(), name: f.name.trim(), category: f.category || 'General', sample_type: f.sample_type || 'Serum',
       container: f.container || null, tat_hours: f.tat_hours === '' || f.tat_hours == null ? null : Number(f.tat_hours), result_kind: f.result_kind,
-      method: f.method || null, instructions: f.instructions || null, report_note: f.report_note || null, auto_verify: !!f.auto_verify,
+      aliases: f.aliases ? f.aliases.trim() : null, method: f.method || null, instructions: f.instructions || null, report_note: f.report_note || null, auto_verify: !!f.auto_verify,
       outsourced: !!f.outsourced, outsource_lab_id: f.outsourced ? (f.outsource_lab_id || null) : null, template_id: f.template_id || null,
       ranges_reviewed: !!f.ranges_reviewed, kind: 'test',
     };
@@ -217,6 +217,7 @@ function TestModal({ t, manage, onClose }) {
         <Field label="Result type"><select value={f.result_kind} onChange={set('result_kind')}><option value="parameters">Values (parameters)</option><option value="culture">Culture & sensitivity</option><option value="text">Written report (template)</option></select></Field>
         <Field label="Method (printed)"><input value={f.method || ''} onChange={set('method')} /></Field>
         {f.result_kind === 'text' && <Field label="Template"><select value={f.template_id || ''} onChange={set('template_id')}><option value="">None</option>{templates.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>}
+        <div className="span2"><Field label="Other names (for search)"><input value={f.aliases || ''} onChange={set('aliases')} placeholder="e.g. sperm, sperm count, fertility" /></Field></div>
         <div className="span2"><Field label="Patient instructions (receipt)"><input value={f.instructions || ''} onChange={set('instructions')} placeholder="e.g. Fasting 10–12 hours" /></Field></div>
         <div className="span2"><Field label="Note printed on the report"><input value={f.report_note || ''} onChange={set('report_note')} /></Field></div>
         <label className="check"><input type="checkbox" checked={!!f.auto_verify} onChange={(e) => setF({ ...f, auto_verify: e.target.checked })} /><span>May auto-verify<small>Off = always checked by hand</small></span></label>
