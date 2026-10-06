@@ -72,6 +72,17 @@ async function main(withOld) {
   const kid = (await db.query(`select count(*)::int n from lab_reference_ranges r join lab_parameters p on p.id=r.parameter_id join lab_tests t on t.id=p.test_id where t.code='CREAT' and p.name='Creatinine' and r.age_min_days=365 and r.high=0.7`)).rows[0];
   ok(kid.n === 1, 'child creatinine band exists once');
 
+  const cs = (await db.query(`select count(*)::int n from lab_parameters p join lab_tests t on t.id=p.test_id where t.code='CBCS' and p.result_type='calculated'`)).rows[0];
+  ok(cs.n === 5, 'CBC with Smear has 5 absolute-count fields, got ' + cs.n);
+  const gov = (await db.query(`select count(*) filter (where source is null)::int nosrc, count(*) filter (where status='approved')::int appr, count(*)::int tot from lab_reference_ranges where note like 'Starter%'`)).rows[0];
+  ok(gov.tot > 400 && gov.nosrc === 0 && gov.appr === gov.tot, 'every starter range has a source and is approved: ' + JSON.stringify(gov));
+  await db.exec(`insert into lab_reference_ranges (parameter_id, low, high, status) select id, 1, 2, 'draft' from lab_parameters limit 1`);
+  let badStatus = false;
+  try { await db.exec(`insert into lab_reference_ranges (parameter_id, low, high, status) select id, 1, 2, 'bogus' from lab_parameters limit 1`); } catch { badStatus = true; }
+  ok(badStatus, 'range status must be draft or approved');
+  await db.exec(`select analysers, print_staff from lab_settings; select analyser from lab_tests limit 1; select analyser, reported_by from accession_tests limit 1`);
+  ok(true);
+
   if (withOld) {
     const acc = await one(`select a.acc_number, public.acc_total(a.id) tot, public.acc_paid(a.id) paid, a.doctor_text,
                            (select status from accession_tests where accession_id = a.id) st

@@ -54,6 +54,8 @@ function flagMark(r) {
   return '';
 }
 
+const LONG_TEXT = /opinion|advice|comment|interpretation|impression|diagnosis/i;
+
 function ParamTable({ t }) {
   const rows = (t.results || []).filter((r) => r.value !== '' && r.value != null);
   let lastSec = null;
@@ -66,6 +68,12 @@ function ParamTable({ t }) {
           const sec = r.section && r.section !== lastSec ? r.section : null;
           lastSec = r.section || lastSec;
           const out = r.flag && r.flag !== 'normal';
+          if (r.optional && LONG_TEXT.test(r.name)) {
+            return [
+              sec && <tr key={'s' + (r.parameter_id || r.name)} className="sec"><td colSpan={5}>{sec}</td></tr>,
+              <tr key={r.parameter_id || r.name}><td><b>{r.name}</b></td><td colSpan={4} style={{ whiteSpace: 'pre-wrap' }}>{r.value}</td></tr>,
+            ];
+          }
           return [
             sec && <tr key={'s' + (r.parameter_id || r.name)} className="sec"><td colSpan={5}>{sec}</td></tr>,
             <tr key={r.parameter_id || r.name} className={out || r.critical ? 'abn' : ''}>
@@ -124,6 +132,7 @@ export default function ReportBody({ data, qr }) {
   const signers = [...new Set(tests.map((t) => t.pathologist_id).filter(Boolean))].map((id) => pathologists.find((p) => p.id === id)).filter(Boolean);
   if (!signers.length) { const d = pathologists.find((p) => p.is_default) || pathologists[0]; if (d) signers.push(d); }
   const lastVerified = tests.map((t) => t.verified_at).filter(Boolean).sort().pop();
+  const reporters = [...new Set(tests.map((t) => t.reported_by).filter(Boolean))];
   const amended = tests.some((t) => t.amended || t.amend_count > 0);
   return (
     <>
@@ -147,7 +156,7 @@ export default function ReportBody({ data, qr }) {
                   : <ParamTable t={t} />}
               {t.remarks && <p style={{ margin: '4px 0 0' }}><b>Remarks:</b> {t.remarks}</p>}
               {t.report_note && <p style={{ margin: '3px 0 0', fontSize: 11, color: '#444' }}>{t.report_note}</p>}
-              {t.method && <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#666' }}>Method: {t.method}</p>}
+              {(t.method || t.analyser) && <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#666' }}>{[t.method && `Method: ${t.method}`, t.analyser && `Analyser: ${t.analyser}`].filter(Boolean).join('   |   ')}</p>}
             </div>
           ))}
         </div>
@@ -157,7 +166,8 @@ export default function ReportBody({ data, qr }) {
       <div className="doc-foot">
         <div style={{ fontSize: 10.5, color: '#555' }}>
           {acc.verify_code && lab?.public_url && <>Verify online: {lab.public_url.replace(/^https?:\/\//, '')}/v/{acc.verify_code}<br /></>}
-          Printed {fmtDate(new Date())}
+          Printed {fmtDate(new Date())}{lab?.print_staff && data.printed_by ? ` by ${data.printed_by}` : ''}
+          {lab?.print_staff && reporters.length > 0 && <><br />Reported by: {reporters.join(', ')}</>}
         </div>
         <div className="row" style={{ gap: 26 }}>
           {signers.map((p) => (

@@ -132,3 +132,26 @@ describe('test search', () => {
   it('code first, then name', () => { expect(searchTests(T, 'cb')[0].code).toBe('CBC'); expect(searchTests(T, 'sugar')[0].code).toBe('BSF'); });
   it('empty query gives nothing', () => expect(searchTests(T, ' ')).toEqual([]));
 });
+
+describe('range approval and absolute counts', () => {
+  const dob = new Date(Date.now() - 30 * 365.25 * 864e5).toISOString().slice(0, 10);
+  const pt = { dob, gender: 'male' };
+  it('draft ranges are not used, approved ones are', () => {
+    const r = [
+      { gender: 'male', age_min_days: 6570, age_max_days: null, low: 1, high: 2, status: 'draft' },
+      { gender: 'any', age_min_days: 0, age_max_days: null, low: 5, high: 6, status: 'approved' },
+    ];
+    expect(findRange(r, pt)?.low).toBe(5);
+    expect(findRange([r[0]], pt)).toBeNull();
+    expect(findRange([{ ...r[0], status: undefined }], pt)?.low).toBe(1); // old rows without status still count
+  });
+  it('absolute neutrophils = % x WBC x 10', () => {
+    const params = [
+      { id: 'w', name: 'WBC', code: 'WBC', result_type: 'numeric', sort_order: 1 },
+      { id: 'n', name: 'Neu', code: 'NEU', result_type: 'numeric', sort_order: 2 },
+      { id: 'a', name: 'Abs', result_type: 'calculated', formula: '{NEU}*{WBC}*10', decimals: 0, sort_order: 3 },
+    ];
+    const out = buildResults(params, { w: '8.0', n: '60' }, {}, pt);
+    expect(out.find((x) => x.name === 'Abs').value).toBe('4800');
+  });
+});

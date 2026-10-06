@@ -11,6 +11,8 @@ import {
 import { fmtDate } from '../lib/format.js';
 import { Field, Modal, useAction, useToast } from './ui.jsx';
 
+const LONG_TEXT = /opinion|advice|comment|interpretation|impression|diagnosis/i;
+
 // Enter results for one test. Parameter tests get a fast grid (Enter moves
 // down), cultures get organism + antibiotic S/I/R grid, text reports get a
 // template. Shows the last result, flags, critical values and suggestions.
@@ -51,6 +53,9 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
   const [remarks, setRemarks] = useState(row.remarks || '');
   const [reason, setReason] = useState('');
   const [pathId, setPathId] = useState(row.pathologist_id || '');
+  const [analyser, setAnalyser] = useState(row.analyser || '');
+  const machines = settings?.analysers || [];
+  useEffect(() => { if (!row.analyser && test?.analyser) setAnalyser((a) => a || test.analyser); }, [test?.analyser]); // eslint-disable-line react-hooks/exhaustive-deps
   const [critical, setCritical] = useState(null);
   const [busy, setBusy] = useState(false);
   const gridRef = useRef(null);
@@ -76,9 +81,10 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
   }, [reflex.map((r) => r.code).join()], []);
 
   function payload() {
-    if (kind === 'culture') return { culture, remarks: remarks || null };
-    if (kind === 'text') return { text_result: text, remarks: remarks || null };
-    return { results, remarks: remarks || null };
+    const base = { analyser: analyser || null, remarks: remarks || null };
+    if (kind === 'culture') return { culture, ...base };
+    if (kind === 'text') return { text_result: text, ...base };
+    return { results, ...base };
   }
 
   async function save(verify) {
@@ -132,6 +138,15 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
       <div className="muted" style={{ marginTop: -6, marginBottom: 10 }}>
         {patient?.full_name} · {acc?.acc_number}{row.sample_type ? ` · ${row.sample_type}` : ''}{test?.method ? ` · Method: ${test.method}` : ''}
       </div>
+      {machines.length > 0 && kind === 'parameters' && (
+        <div className="row" style={{ marginBottom: 10, gap: 8 }}>
+          <label htmlFor="re-machine" className="muted">Machine used:</label>
+          <select id="re-machine" value={analyser} onChange={(e) => setAnalyser(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
+            <option value="">— not recorded —</option>
+            {[...new Set([...machines, analyser].filter(Boolean))].map((m) => <option key={m}>{m}</option>)}
+          </select>
+        </div>
+      )}
       {test && !test.ranges_reviewed && kind === 'parameters' && <div className="note warn" style={{ marginBottom: 10 }}>Reference ranges of this test are starter values. Check them once in Settings → Tests & prices and tick "Reviewed".</div>}
       {acc?.clinical_notes && <div className="note" style={{ marginBottom: 10 }}>Clinical notes: {acc.clinical_notes}</div>}
 
@@ -159,6 +174,8 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
                               ? <select autoFocus={i === 0} value={vals[p.id] ?? ''} onChange={(e) => setVals({ ...vals, [p.id]: e.target.value })}>
                                   <option value="" />{(p.options || '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => <option key={o}>{o}</option>)}
                                 </select>
+                              : p.result_type === 'text' && LONG_TEXT.test(p.name)
+                                ? <textarea rows={3} value={vals[p.id] ?? ''} onChange={(e) => setVals({ ...vals, [p.id]: e.target.value })} />
                               : <input autoFocus={i === 0} inputMode={p.result_type === 'numeric' ? 'decimal' : 'text'} value={vals[p.id] ?? ''}
                                   className={p.result_type === 'numeric' && !numericValid(vals[p.id]) ? 'bad' : ''}
                                   list={p.result_type === 'text' ? `opts-${p.id}` : undefined}

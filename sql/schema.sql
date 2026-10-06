@@ -175,6 +175,8 @@ create table if not exists public.lab_settings (
   created_by  uuid,
   updated_by  uuid
 );
+alter table public.lab_settings add column if not exists analysers  text[] not null default '{}';  -- this lab's machines
+alter table public.lab_settings add column if not exists print_staff boolean not null default false; -- print "Reported by / Printed by"
 insert into public.lab_settings (id) values (1) on conflict (id) do nothing;
 
 create table if not exists public.pathologists (
@@ -223,6 +225,7 @@ alter table public.lab_tests add column if not exists auto_verify    boolean not
 alter table public.lab_tests add column if not exists outsourced     boolean not null default false;
 alter table public.lab_tests add column if not exists outsource_lab_id uuid;
 alter table public.lab_tests add column if not exists template_id    uuid;
+alter table public.lab_tests add column if not exists analyser       text;   -- default machine for this test
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'lab_tests_kind_check') then
     alter table public.lab_tests add constraint lab_tests_kind_check check (kind in ('test','package'));
@@ -284,6 +287,18 @@ create table if not exists public.lab_reference_ranges (
   check (low is null or high is null or low <= high)
 );
 create index if not exists lab_ranges_param_idx on public.lab_reference_ranges (parameter_id);
+-- Range governance: where the range came from, and who approved it.
+-- Only 'approved' ranges are used to flag results; 'draft' ones wait for a pathologist/admin.
+alter table public.lab_reference_ranges add column if not exists source      text;
+alter table public.lab_reference_ranges add column if not exists status      text not null default 'approved';
+alter table public.lab_reference_ranges add column if not exists approved_by text;
+alter table public.lab_reference_ranges add column if not exists approved_at timestamptz;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'lab_ranges_status_check') then
+    alter table public.lab_reference_ranges add constraint lab_ranges_status_check check (status in ('draft','approved'));
+  end if;
+end $$;
+update public.lab_reference_ranges set source = note where source is null and note is not null;
 
 create table if not exists public.antibiotics (
   id         uuid primary key default gen_random_uuid(),
@@ -541,6 +556,8 @@ create table if not exists public.accession_tests (
   cancel_reason    text,
   sort_order       int not null default 0
 );
+alter table public.accession_tests add column if not exists analyser    text;   -- machine used for this result
+alter table public.accession_tests add column if not exists reported_by  text;   -- name of the person who verified it
 create unique index if not exists acc_tests_no_dup
   on public.accession_tests (accession_id, test_id) where status <> 'cancelled';
 create index if not exists acc_tests_acc_idx     on public.accession_tests (accession_id);
@@ -922,7 +939,7 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'lab_name', s.lab_name, 'tagline', s.tagline, 'logo', s.logo, 'address', s.address, 'phone', s.phone,
     'whatsapp', s.whatsapp, 'email', s.email, 'website', s.website, 'currency', s.currency,
-    'report_footer', s.report_footer, 'public_url', s.public_url,
+    'report_footer', s.report_footer, 'public_url', s.public_url, 'print_staff', s.print_staff,
     'pathologists', coalesce((select jsonb_agg(to_jsonb(p) - 'created_by' - 'updated_by' order by p.sort_order)
                                from public.pathologists p where p.active), '[]'::jsonb))
   from public.lab_settings s where s.id = 1
@@ -941,7 +958,7 @@ language sql stable security definer set search_path = public as $$
         'id', t.id, 'test_id', t.test_id, 'test_name', t.test_name, 'test_code', t.test_code,
         'department', t.department, 'sample_type', t.sample_type, 'status', t.status,
         'verified_at', t.verified_at, 'entered_at', t.entered_at, 'amended', t.amend_count > 0,
-        'pathologist_id', t.pathologist_id, 'report_note', lt.report_note, 'method', lt.method,
+        'pathologist_id', t.pathologist_id, 'report_note', lt.report_note, 'method', lt.method, 'analyser', t.analyser, 'reported_by', t.reported_by,
         'results',     case when p_show_results and t.status = 'verified' then t.results end,
         'culture',     case when p_show_results and t.status = 'verified' then t.culture end,
         'text_result', case when p_show_results and t.status = 'verified' then t.text_result end,
@@ -1242,9 +1259,9 @@ begin
       continue;
     end if;
     for rg in select * from jsonb_array_elements(coalesce(prm->'r','[]'::jsonb)) loop
-      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note)
+      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note, source)
       values (pid, coalesce(rg->>'g','any'), coalesce((rg->>'a0')::int, 0), (rg->>'a1')::int,
-              (rg->>'lo')::numeric, (rg->>'hi')::numeric, rg->>'x', 'Starter value — confirm for your method');
+              (rg->>'lo')::numeric, (rg->>'hi')::numeric, rg->>'x', 'Starter value — confirm for your method', 'Starter value (standard reference)');
     end loop;
   end loop;
 end $$;
@@ -1262,9 +1279,9 @@ begin
                       where r.parameter_id = pr.id and r.age_min_days < 6570)
   loop
     for b in select * from jsonb_array_elements(p_bands) loop
-      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note)
+      insert into public.lab_reference_ranges (parameter_id, gender, age_min_days, age_max_days, low, high, display_text, note, source)
       values (par.id, coalesce(b->>'g','any'), (b->>'a0')::int, (b->>'a1')::int,
-              (b->>'lo')::numeric, (b->>'hi')::numeric, b->>'x', 'Starter paediatric value — confirm for your method');
+              (b->>'lo')::numeric, (b->>'hi')::numeric, b->>'x', 'Starter paediatric value — confirm for your method', 'Starter paediatric value (standard reference)');
     end loop;
   end loop;
 end $$;

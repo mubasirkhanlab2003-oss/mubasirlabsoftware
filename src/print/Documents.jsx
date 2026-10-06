@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db.js';
 import * as A from '../lib/actions.js';
 import { useSettings, useTests } from '../lib/hooks.js';
+import { useAuth } from '../lib/auth.jsx';
 import { billTotals, methodLabel } from '../lib/pricing.js';
 import { doctorLedger, panelLedger } from '../lib/reports.js';
 import { toNum } from '../lib/results.js';
@@ -111,7 +112,9 @@ export function LabReportDoc() {
   const { id } = useParams();
   const [sp] = useSearchParams();
   const only = sp.get('tests') ? sp.get('tests').split(',') : null;
-  const data = useLiveQuery(async () => (await reportData(id, only)) || false, [id, sp.get('tests')]);
+  const { profile } = useAuth();
+  const rd = useLiveQuery(async () => (await reportData(id, only)) || false, [id, sp.get('tests')]);
+  const data = rd ? { ...rd, printed_by: profile?.full_name || null } : rd;
   const qr = useQr(data ? `${data.lab.public_url}/v/${data.acc.verify_code}` : null);
   const bill = useLiveQuery(() => A.accessionBill(id), [id]);
   const [pick, setPick] = useState(false);

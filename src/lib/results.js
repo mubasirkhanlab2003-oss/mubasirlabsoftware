@@ -15,6 +15,7 @@ export function findRange(ranges, patient, at = new Date()) {
   const g = patient?.gender;
   const fits = ranges.filter((r) => {
     if (r.active === false) return false;
+    if (r.status === 'draft') return false; // waits for approval
     if (r.gender !== 'any' && r.gender !== g) return false;
     if (days == null) return (r.age_min_days || 0) === 0 && r.age_max_days == null;
     return days >= (r.age_min_days || 0) && (r.age_max_days == null || days < r.age_max_days);

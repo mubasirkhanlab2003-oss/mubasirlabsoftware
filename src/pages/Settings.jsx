@@ -54,9 +54,22 @@ function SettingsForm({ kind }) {
     const out = { ...f };
     for (const k of ['home_charge', 'letterhead_top_mm', 'letterhead_bottom_mm', 'label_width_mm', 'label_height_mm', 'sample_keep_days', 'backup_reminder_days']) out[k] = Number(out[k] || 0);
     if (typeof out.expense_categories === 'string') out.expense_categories = out.expense_categories.split(',').map((x) => x.trim()).filter(Boolean);
+    if (typeof out.analysers === 'string') out.analysers = [...new Set(out.analysers.split(/[\n,]/).map((x) => x.trim()).filter(Boolean))];
+    if (!Array.isArray(out.analysers)) out.analysers = [];
     for (const k of Object.keys(out)) if (out[k] === '') out[k] = null;
     delete out.id; delete out.created_at;
-    await run(() => updateRow('lab_settings', 1, out), 'Settings saved');
+    await run(async () => {
+      if (out.public_url) {
+        let u = String(out.public_url).trim();
+        if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+        u = u.replace(/\/+$/, '');
+        if (!/^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/[^\s]*)?$/i.test(u)) {
+          throw new Error('Web address is not valid. It must look like https://mylab.vercel.app (no spaces).');
+        }
+        out.public_url = u;
+      }
+      return updateRow('lab_settings', 1, out);
+    }, 'Settings saved');
   }
   return (
     <div className="panel" style={{ maxWidth: 980 }}>
@@ -93,6 +106,7 @@ function SettingsForm({ kind }) {
           <Field label="Remind to download a backup every (days)"><input type="number" value={f.backup_reminder_days ?? 7} onChange={set('backup_reminder_days')} /></Field>
           <Field label="Delete PIN" hint="Asked before anything is deleted. Leave empty for no PIN."><input type="password" inputMode="numeric" value={f.delete_pin || ''} onChange={set('delete_pin')} autoComplete="new-password" /></Field>
           <div className="span2"><Field label="Expense categories (comma separated)"><input value={Array.isArray(f.expense_categories) ? f.expense_categories.join(', ') : f.expense_categories || ''} onChange={set('expense_categories')} /></Field></div>
+          <div className="span3"><Field label="Our machines / analysers (one per line)" hint="Shown as a pick-list when entering results and printed on the report, e.g. Sysmex XN-350, Mindray BS-240, Manual. Leave empty to hide."><textarea rows={4} value={Array.isArray(f.analysers) ? f.analysers.join('\n') : f.analysers || ''} onChange={set('analysers')} placeholder={'Sysmex XN-350\nMindray BS-240\nManual'} /></Field></div>
         </div>
       </div>}
       {kind === 'printing' && <div className="grid2">
@@ -110,6 +124,7 @@ function SettingsForm({ kind }) {
           <Field label="Barcode label width (mm)"><input type="number" value={f.label_width_mm} onChange={set('label_width_mm')} /></Field>
           <Field label="Label height (mm)"><input type="number" value={f.label_height_mm} onChange={set('label_height_mm')} /></Field>
         </div>
+        <div className="span2">{chk('print_staff', 'Print "Reported by" and "Printed by" on reports', 'Shows the name of the person who verified the result and who printed the report.')}</div>
         <div className="span2"><Field label="Report footer (printed under every report)"><textarea value={f.report_footer || ''} onChange={set('report_footer')} placeholder="e.g. This report is for the use of the referring doctor. Results relate only to the sample tested." /></Field></div>
         <div className="span2"><Field label="Receipt footer"><textarea value={f.receipt_footer || ''} onChange={set('receipt_footer')} placeholder="e.g. Reports are kept for 30 days." /></Field></div>
       </div>}
@@ -182,6 +197,7 @@ function PriceInput({ t, disabled }) {
 function TestModal({ t, manage, onClose }) {
   const depts = useDepartments();
   const labs = useOutsourceLabs();
+  const settings = useSettings();
   const templates = useLiveQuery(() => db().report_templates.toArray(), [], []);
   const params = useLiveQuery(() => (t.id ? db().lab_parameters.where('test_id').equals(t.id).toArray() : []), [t.id], []);
   const ranges = useLiveQuery(async () => (params.length ? db().lab_reference_ranges.where('parameter_id').anyOf(params.map((p) => p.id)).toArray() : []), [params.map((p) => p.id).join()], []);
@@ -194,7 +210,7 @@ function TestModal({ t, manage, onClose }) {
     const out = {
       code: f.code.trim().toUpperCase(), name: f.name.trim(), category: f.category || 'General', sample_type: f.sample_type || 'Serum',
       container: f.container || null, tat_hours: f.tat_hours === '' || f.tat_hours == null ? null : Number(f.tat_hours), result_kind: f.result_kind,
-      aliases: f.aliases ? f.aliases.trim() : null, method: f.method || null, instructions: f.instructions || null, report_note: f.report_note || null, auto_verify: !!f.auto_verify,
+      aliases: f.aliases ? f.aliases.trim() : null, analyser: f.analyser || null, method: f.method || null, instructions: f.instructions || null, report_note: f.report_note || null, auto_verify: !!f.auto_verify,
       outsourced: !!f.outsourced, outsource_lab_id: f.outsourced ? (f.outsource_lab_id || null) : null, template_id: f.template_id || null,
       ranges_reviewed: !!f.ranges_reviewed, kind: 'test',
     };
@@ -216,6 +232,7 @@ function TestModal({ t, manage, onClose }) {
         <Field label="Report ready in (hours)"><input type="number" value={f.tat_hours ?? ''} onChange={set('tat_hours')} /></Field>
         <Field label="Result type"><select value={f.result_kind} onChange={set('result_kind')}><option value="parameters">Values (parameters)</option><option value="culture">Culture & sensitivity</option><option value="text">Written report (template)</option></select></Field>
         <Field label="Method (printed)"><input value={f.method || ''} onChange={set('method')} /></Field>
+        {(settings?.analysers || []).length > 0 && f.result_kind === 'parameters' && <Field label="Default machine"><select value={f.analyser || ''} onChange={set('analyser')}><option value="">None</option>{settings.analysers.map((m) => <option key={m}>{m}</option>)}</select></Field>}
         {f.result_kind === 'text' && <Field label="Template"><select value={f.template_id || ''} onChange={set('template_id')}><option value="">None</option>{templates.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>}
         <div className="span2"><Field label="Other names (for search)"><input value={f.aliases || ''} onChange={set('aliases')} placeholder="e.g. sperm, sperm count, fertility" /></Field></div>
         <div className="span2"><Field label="Patient instructions (receipt)"><input value={f.instructions || ''} onChange={set('instructions')} placeholder="e.g. Fasting 10–12 hours" /></Field></div>
@@ -240,7 +257,7 @@ function TestModal({ t, manage, onClose }) {
                     <td><b>{p.name}</b>{p.section && <div className="faint">{p.section}</div>}</td>
                     <td className="faint">{p.code}</td><td className="faint">{p.unit}</td>
                     <td className="faint">{p.result_type}{p.formula ? `: ${p.formula.length > 30 ? p.formula.slice(0, 30) + '…' : p.formula}` : ''}{p.options ? `: ${p.options}` : ''}</td>
-                    <td className="faint">{ranges.filter((r) => r.parameter_id === p.id && r.active !== false).map((r) => <div key={r.id}>{r.gender !== 'any' ? r.gender + ' ' : ''}{ageBand(r)}{rangeText(r)}</div>)}</td>
+                    <td className="faint">{ranges.filter((r) => r.parameter_id === p.id && r.active !== false).map((r) => <div key={r.id}>{r.gender !== 'any' ? r.gender + ' ' : ''}{ageBand(r)}{rangeText(r)}{r.status === 'draft' ? ' (draft)' : ''}</div>)}</td>
                     <td className="faint">{[p.critical_low != null && `< ${p.critical_low}`, p.critical_high != null && `> ${p.critical_high}`].filter(Boolean).join(' · ')}</td>
                     <td className="right nowrap"><button className="btn small ghost" onClick={() => setParamEdit(p)}>Edit</button><button className="btn small ghost" onClick={() => setRangeFor(p)}>Ranges</button></td>
                   </tr>
@@ -253,7 +270,7 @@ function TestModal({ t, manage, onClose }) {
       )}
       {!t.id && <p className="faint" style={{ marginTop: 10 }}>Save the test first, then add its parameters and ranges.</p>}
       {paramEdit && <ParamModal p={paramEdit} siblings={params} onClose={() => setParamEdit(null)} />}
-      {rangeFor && <RangesModal p={rangeFor} ranges={ranges.filter((r) => r.parameter_id === rangeFor.id && r.active !== false)} onClose={() => setRangeFor(null)} />}
+      {rangeFor && <RangesModal p={rangeFor} ranges={ranges.filter((r) => r.parameter_id === rangeFor.id)} onClose={() => setRangeFor(null)} />}
       {!manage && <p className="faint">Prices are changed by the Admin or Accountant.</p>}
     </Modal>
   );
@@ -311,19 +328,84 @@ function ParamModal({ p, siblings, onClose }) {
   );
 }
 
+const RANGE_SOURCES = ['Kit / analyser manufacturer insert', 'Own lab study (CLSI EP28)', 'CALIPER paediatric reference', 'WHO guideline', 'Standard textbook (Tietz / Henry)', 'Starter value (standard reference)'];
+const AGE_BANDS = [['Newborn (0–28 days)', 0, 28], ['Infant (1–12 months)', 28, 365], ['Child (1–12 years)', 365, 4383], ['Adolescent (12–18 years)', 4383, 6570], ['Adult (18 years and above)', 6570, null]];
+
 function RangesModal({ p, ranges, onClose }) {
-  const [f, setF] = useState({ gender: 'any', from: '', fromU: 'y', to: '', toU: 'y', low: '', high: '', display_text: '' });
+  const { can, isAdmin, profile } = useAuth();
+  const canApprove = isAdmin || can('verify');
+  const me = profile?.full_name || profile?.email || 'User';
+  const blank = { gender: 'any', from: '', fromU: 'y', to: '', toU: 'y', low: '', high: '', display_text: '', source: '', status: canApprove ? 'approved' : 'draft' };
+  const [f, setF] = useState(blank);
+  const [editing, setEditing] = useState(null);
+  const [grid, setGrid] = useState(false);
+  const [cells, setCells] = useState({});
+  const [gridSource, setGridSource] = useState('');
+  const [showHist, setShowHist] = useState(false);
   const run = useAction();
+  const active = ranges.filter((r) => r.active !== false);
+  const history = ranges.filter((r) => r.active === false).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   const days = (v, u) => (v === '' ? null : Math.round(Number(v) * (u === 'y' ? 365.25 : u === 'm' ? 30.44 : 1)));
+  const stamp = (status) => (status === 'approved' && canApprove ? { approved_by: me, approved_at: new Date().toISOString() } : { approved_by: null, approved_at: null });
+  const setSt = (v) => setF({ ...f, status: canApprove ? v : 'draft' });
+
+  function startEdit(r) {
+    const toY = (d) => (d == null ? ['', 'y'] : d % 365 === 0 || d >= 730 ? [String(Math.round(d / 365.25 * 10) / 10), 'y'] : [String(d), 'd']);
+    const [from, fromU] = toY(r.age_min_days || 0); const [to, toU] = toY(r.age_max_days);
+    setEditing(r);
+    setF({ gender: r.gender, from: r.age_min_days ? from : '', fromU, to, toU, low: r.low ?? '', high: r.high ?? '', display_text: r.display_text || '', source: r.source || '', status: canApprove ? 'approved' : 'draft' });
+  }
+  function rowFromForm() {
+    const row = { parameter_id: p.id, gender: f.gender, age_min_days: days(f.from, f.fromU) || 0, age_max_days: days(f.to, f.toU), low: f.low === '' ? null : Number(f.low), high: f.high === '' ? null : Number(f.high), display_text: f.display_text || null, source: f.source || null, status: f.status, ...stamp(f.status), active: true };
+    if (row.low == null && row.high == null && !row.display_text) throw new Error('Enter low/high or a normal text.');
+    if (!row.source) throw new Error('Write the source of this range (kit insert, own study, textbook…). It is printed in the audit trail.');
+    return row;
+  }
+  async function saveRange() {
+    const row = rowFromForm();
+    await insertRow('lab_reference_ranges', row);
+    if (editing) await updateRow('lab_reference_ranges', editing.id, { active: false });
+    setEditing(null); setF({ ...blank, source: f.source });
+  }
+  async function saveGrid() {
+    if (!gridSource.trim()) throw new Error('Write the source of these ranges first.');
+    let n = 0;
+    for (const [i, [, a0, a1]] of AGE_BANDS.entries()) {
+      for (const g of ['male', 'female', 'any']) {
+        const lo = cells[`${i}-${g}-lo`], hi = cells[`${i}-${g}-hi`];
+        if ((lo === '' || lo == null) && (hi === '' || hi == null)) continue;
+        await insertRow('lab_reference_ranges', { parameter_id: p.id, gender: g, age_min_days: a0, age_max_days: a1, low: lo === '' || lo == null ? null : Number(lo), high: hi === '' || hi == null ? null : Number(hi), source: gridSource.trim(), status: canApprove ? 'approved' : 'draft', ...stamp(canApprove ? 'approved' : 'draft'), active: true });
+        n++;
+      }
+    }
+    if (!n) throw new Error('Fill at least one low/high value.');
+    setCells({}); setGrid(false);
+  }
+  const statusBadge = (r) => (r.status === 'draft'
+    ? <span className="badge amber" title="Not used on reports until approved">Draft</span>
+    : <span className="badge green" title={r.approved_by ? `Approved by ${r.approved_by}` : 'Approved'}>Approved</span>);
   return (
-    <Modal wide title={`Reference ranges: ${p.name}`} onClose={onClose} footer={<button className="btn" onClick={onClose}>Done</button>}>
-      <p className="muted" style={{ marginTop: 0 }}>The range matching the patient's sex and age is used. A sex-specific range wins over "any"; the narrowest age band wins.</p>
-      <table className="t compact"><tbody>
-        {ranges.map((r) => <tr key={r.id}><td>{r.gender}</td><td>{ageBand(r) || 'all ages'}</td><td><b>{rangeText(r)}</b></td><td className="faint">{r.note}</td>
-          <td className="right"><button className="btn small ghost" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { active: false }), 'Range removed')}>Remove</button></td></tr>)}
-      </tbody></table>
-      {!ranges.length && <p className="faint">No range yet.</p>}
-      <h3 style={{ marginTop: 14 }}>Add a range</h3>
+    <Modal wide="x" title={`Reference ranges: ${p.name}`} onClose={onClose} footer={<button className="btn" onClick={onClose}>Done</button>}>
+      <p className="muted" style={{ marginTop: 0 }}>The approved range matching the patient's sex and age is used. A sex-specific range wins over "any"; the narrowest age band wins. <b>Draft</b> ranges are ignored until a pathologist/admin approves them. Changing a range keeps the old one in history.</p>
+      <table className="t compact">
+        <thead><tr><th>Sex</th><th>Age</th><th>Range</th><th>Source</th><th>Status</th><th /></tr></thead>
+        <tbody>
+          {active.sort((a, b) => (a.age_min_days || 0) - (b.age_min_days || 0)).map((r) => (
+            <tr key={r.id}><td>{r.gender}</td><td>{ageBand(r).replace(/: $/, '') || 'all ages'}</td><td><b>{rangeText(r)}</b></td>
+              <td className="faint">{r.source || r.note}</td>
+              <td>{statusBadge(r)}{r.status !== 'draft' && r.approved_by && <div className="faint">{r.approved_by}{r.approved_at ? ` · ${fmtDateTime(r.approved_at)}` : ''}</div>}</td>
+              <td className="right nowrap">
+                {r.status === 'draft' && canApprove && <button className="btn small" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { status: 'approved', ...stamp('approved') }), 'Range approved')}>Approve</button>}
+                <button className="btn small ghost" onClick={() => startEdit(r)}>Edit</button>
+                <button className="btn small ghost" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { active: false }), 'Range removed (kept in history)')}>Remove</button>
+              </td></tr>
+          ))}
+        </tbody>
+      </table>
+      {!active.length && <p className="faint">No range yet.</p>}
+      {active.length > 0 && !active.some((r) => r.status !== 'draft') && <div className="note warn" style={{ marginTop: 8 }}>All ranges are drafts, so results will not be flagged. Approve a range.</div>}
+
+      <h3 style={{ marginTop: 14 }}>{editing ? 'Change this range' : 'Add a range'}</h3>
       <div className="grid4">
         <Field label="Sex"><select value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value })}><option value="any">Any</option><option value="male">Male</option><option value="female">Female</option></select></Field>
         <Field label="Age from"><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input type="number" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /><select value={f.fromU} onChange={(e) => setF({ ...f, fromU: e.target.value })} style={{ width: 70 }}><option value="y">yr</option><option value="m">mo</option><option value="d">day</option></select></div></Field>
@@ -332,13 +414,50 @@ function RangesModal({ p, ranges, onClose }) {
         <Field label="Low"><input type="number" value={f.low} onChange={(e) => setF({ ...f, low: e.target.value })} /></Field>
         <Field label="High"><input type="number" value={f.high} onChange={(e) => setF({ ...f, high: e.target.value })} /></Field>
         <Field label="Or normal text" hint="e.g. Non-reactive, Nil"><input value={f.display_text} onChange={(e) => setF({ ...f, display_text: e.target.value })} /></Field>
-        <button className="btn primary" style={{ alignSelf: 'end' }} onClick={() => run(async () => {
-          const row = { parameter_id: p.id, gender: f.gender, age_min_days: days(f.from, f.fromU) || 0, age_max_days: days(f.to, f.toU), low: f.low === '' ? null : Number(f.low), high: f.high === '' ? null : Number(f.high), display_text: f.display_text || null, active: true };
-          if (row.low == null && row.high == null && !row.display_text) throw new Error('Enter low/high or a normal text.');
-          await insertRow('lab_reference_ranges', row);
-          setF({ ...f, low: '', high: '', display_text: '' });
-        }, 'Range added')}>Add range</button>
+        <div />
+        <div className="span2"><Field label="Source of this range" required><input list="range-src" value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} placeholder="e.g. Sysmex XN-350 kit insert 2025" /><datalist id="range-src">{RANGE_SOURCES.map((x) => <option key={x} value={x} />)}</datalist></Field></div>
+        <Field label="Status"><select value={f.status} onChange={(e) => setSt(e.target.value)} disabled={!canApprove}><option value="approved">Approved (used now)</option><option value="draft">Draft (wait for approval)</option></select></Field>
+        <div className="row" style={{ alignSelf: 'end' }}>
+          <button className="btn primary" onClick={() => run(saveRange, editing ? 'Range changed (old one kept in history)' : 'Range added')}>{editing ? 'Save change' : 'Add range'}</button>
+          {editing && <button className="btn" onClick={() => { setEditing(null); setF(blank); }}>Cancel</button>}
+        </div>
       </div>
+      {!canApprove && <p className="faint">Ranges you add stay as Draft until the pathologist or admin approves them.</p>}
+
+      <div className="row" style={{ marginTop: 14, gap: 8 }}>
+        <button className="btn small" onClick={() => setGrid(!grid)}>{grid ? 'Hide age-wise table' : 'Age-wise table (newborn to adult)'}</button>
+        {history.length > 0 && <button className="btn small ghost" onClick={() => setShowHist(!showHist)}>{showHist ? 'Hide history' : `History (${history.length} old)`}</button>}
+      </div>
+      {grid && (
+        <div style={{ marginTop: 8 }}>
+          <p className="muted" style={{ margin: '0 0 6px' }}>Fill only the rows you need. Use "Both" when male and female are the same.</p>
+          <table className="t compact">
+            <thead><tr><th>Age</th><th>Male low – high</th><th>Female low – high</th><th>Both low – high</th></tr></thead>
+            <tbody>
+              {AGE_BANDS.map(([label], i) => (
+                <tr key={label}><td>{label}</td>
+                  {['male', 'female', 'any'].map((g) => (
+                    <td key={g}><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+                      <input type="number" aria-label={`${label} ${g} low`} value={cells[`${i}-${g}-lo`] ?? ''} onChange={(e) => setCells({ ...cells, [`${i}-${g}-lo`]: e.target.value })} />
+                      <input type="number" aria-label={`${label} ${g} high`} value={cells[`${i}-${g}-hi`] ?? ''} onChange={(e) => setCells({ ...cells, [`${i}-${g}-hi`]: e.target.value })} />
+                    </div></td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="row" style={{ marginTop: 8, gap: 8 }}>
+            <input list="range-src" value={gridSource} onChange={(e) => setGridSource(e.target.value)} placeholder="Source (required)" style={{ maxWidth: 360 }} />
+            <button className="btn primary" onClick={() => run(saveGrid, 'Age-wise ranges added')}>Add these ranges</button>
+          </div>
+        </div>
+      )}
+      {showHist && (
+        <table className="t compact" style={{ marginTop: 8 }}>
+          <thead><tr><th>Old range</th><th>Sex</th><th>Age</th><th>Source</th><th>Changed</th></tr></thead>
+          <tbody>{history.map((r) => <tr key={r.id} className="muted-row"><td>{rangeText(r)}</td><td>{r.gender}</td><td>{ageBand(r).replace(/: $/, '') || 'all ages'}</td><td className="faint">{r.source || r.note}</td><td className="faint">{r.updated_at ? fmtDateTime(r.updated_at) : ''}</td></tr>)}</tbody>
+        </table>
+      )}
     </Modal>
   );
 }

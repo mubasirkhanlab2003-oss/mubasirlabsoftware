@@ -3,6 +3,7 @@
 export const ALIASES = {
   SEMEN: 'sperm, sperm test, sperm count, semen, SFA, fertility, male fertility',
   CBC: 'blood count, cbc, complete blood, blood picture, khoon',
+  CBCS: 'cbc smear, blood picture, peripheral smear, cbc with ps, blood count smear',
   HB: 'hb, hemoglobin, haemoglobin, khoon, blood',
   ESR: 'esr, sed rate',
   BSF: 'sugar, fasting sugar, fbs, glucose, blood sugar fasting',

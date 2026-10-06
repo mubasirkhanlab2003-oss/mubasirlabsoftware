@@ -376,6 +376,13 @@ export async function consumeForTest(testRow) {
   return used;
 }
 
+// Name printed as "Reported by" (looked up from this device's profiles).
+export async function staffName(userId) {
+  if (!userId) return null;
+  const p = await db().profiles.get(userId);
+  return p?.full_name || p?.email || null;
+}
+
 // Save results. verify=true makes them final (report ready).
 export async function saveResult(testRow, payload, { verify = false, autoVerified = false, pathologistId = null, userId = null } = {}) {
   if (testRow.status === 'verified') throw new Error('Already verified. Use Amend to correct it.');
@@ -387,9 +394,10 @@ export async function saveResult(testRow, payload, { verify = false, autoVerifie
     results: payload.results ?? fresh.results ?? [], culture: payload.culture ?? fresh.culture ?? null,
     text_result: payload.text_result ?? fresh.text_result ?? null, remarks: payload.remarks ?? fresh.remarks ?? null,
     entered_at: fresh.entered_at || nowIso(), entered_by: fresh.entered_by || userId,
+    analyser: payload.analyser !== undefined ? (payload.analyser || null) : (fresh.analyser ?? null),
     status: verify ? 'verified' : 'entered',
   };
-  if (verify) Object.assign(patch, { verified_at: nowIso(), verified_by: userId, pathologist_id: pathologistId, auto_verified: !!autoVerified });
+  if (verify) Object.assign(patch, { verified_at: nowIso(), verified_by: userId, reported_by: await staffName(userId), pathologist_id: pathologistId, auto_verified: !!autoVerified });
   const first = !fresh.entered_at && !(fresh.lots || null);
   if (first) {
     const lots = await consumeForTest(fresh);
@@ -400,9 +408,10 @@ export async function saveResult(testRow, payload, { verify = false, autoVerifie
 
 export async function verifyTests(rows, { pathologistId = null, userId = null } = {}) {
   let n = 0;
+  const by = await staffName(userId);
   for (const r of rows) {
     if (r.status !== 'entered') continue;
-    await updateRow('accession_tests', r.id, { status: 'verified', verified_at: nowIso(), verified_by: userId, pathologist_id: pathologistId, auto_verified: false });
+    await updateRow('accession_tests', r.id, { status: 'verified', verified_at: nowIso(), verified_by: userId, reported_by: by, pathologist_id: pathologistId, auto_verified: false });
     n++;
   }
   return n;
@@ -421,7 +430,8 @@ export async function amendResult(testRow, payload, reason, { userId = null, pat
   };
   await insertRow('result_amendments', { accession_test_id: testRow.id, reason: reason.trim(), old_data: old, new_data: neu, amended_at: nowIso() });
   return updateRow('accession_tests', testRow.id, {
-    ...neu, amend_count: (testRow.amend_count || 0) + 1, verified_at: nowIso(), verified_by: userId,
+    ...neu, amend_count: (testRow.amend_count || 0) + 1, verified_at: nowIso(), verified_by: userId, reported_by: await staffName(userId),
+    analyser: payload.analyser !== undefined ? (payload.analyser || null) : (testRow.analyser ?? null),
     pathologist_id: pathologistId || testRow.pathologist_id,
   });
 }
