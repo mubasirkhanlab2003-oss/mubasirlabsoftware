@@ -4,12 +4,16 @@ import { ALIASES } from '../sql/aliases.mjs';
 import { PEDS } from '../sql/peds.mjs';
 import { TESTS, PACKAGES, ANTIBIOTICS, TEMPLATES } from '../sql/catalogue.mjs';
 
+// Starter adult ranges apply from 18 years ONLY for parameters that have children's bands;
+// every other parameter's range applies to all ages (so a child still sees a reference).
+const ADULT = 6570;
+const widen = (p) => (PEDS[p.n] ? p : { ...p, r: (p.r || []).map((r) => (r.a0 === ADULT ? { ...r, a0: 0 } : r)) });
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const lines = [];
 lines.push(`-- ${TESTS.length} tests, ${PACKAGES.length} packages, ${ANTIBIOTICS.length} antibiotics (generated from sql/catalogue.mjs)`);
 for (const t of TESTS) {
   const o = { code: t.code, name: t.name, dept: t.dept, sample: t.sample, container: t.container, tat: t.tat,
-    prep: t.prep, kind: t.kind, method: t.method, note: t.note, order: t.order * 10, auto: t.auto, params: t.params };
+    prep: t.prep, kind: t.kind, method: t.method, note: t.note, order: t.order * 10, auto: t.auto, params: t.params.map(widen) };
   lines.push(`select public._seed_test($j$${JSON.stringify(o)}$j$::jsonb);`);
 }
 for (const [name, bands] of Object.entries(PEDS)) {

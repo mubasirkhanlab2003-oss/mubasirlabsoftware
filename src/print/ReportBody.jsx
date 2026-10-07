@@ -139,8 +139,8 @@ export default function ReportBody({ data, qr }) {
       <LabHeader lab={lab} qr={qr} qrLabel="Scan to verify" letterhead={letterhead} />
       <div className="doc-title">LABORATORY REPORT {amended && <span className="stamp" style={{ marginLeft: 8, fontSize: 11 }}>AMENDED</span>}</div>
       <PatientBox patient={patient} at={acc.registered_at} cells={[
-        ['Case No.', acc.acc_number], ['Referred by', acc.doctor || 'Self'], ['Registered', fmtDateTime(acc.registered_at)],
-        ['Reported', lastVerified ? fmtDateTime(lastVerified) : '—'], ['Phone', patient?.phone],
+        ['Case No.', acc.acc_number], ['Referred by', acc.doctor || 'Self'], ['Invoice date', fmtDateTime(acc.registered_at)],
+        ['Report date', lastVerified ? fmtDateTime(lastVerified) : '—'], ['Printed', fmtDateTime(new Date())], ['Phone', patient?.phone],
         ...(acc.panel ? [['Panel', acc.panel]] : []),
       ]} />
       {letterhead && qr && <div style={{ float: 'right', textAlign: 'center', fontSize: 9, marginTop: -4 }}><img src={qr} alt="" width="62" height="62" /><div>Verify</div></div>}

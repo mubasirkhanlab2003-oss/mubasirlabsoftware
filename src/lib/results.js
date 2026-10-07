@@ -2,6 +2,7 @@
 // parameters, delta check (change from the last result), reflex suggestions
 // and auto-verification. Pure functions — no database access.
 import { ageDays } from './format.js';
+import { isMorph } from './smear.js';
 
 export const TEST_STATUS_LABEL = {
   pending: 'Sample pending', collected: 'In lab', entered: 'Result entered', verified: 'Verified', cancelled: 'Cancelled',
@@ -124,8 +125,11 @@ export function buildResults(params, values, rangesByParam, patient, at = new Da
   const out = [];
   for (const p of active) {
     let value = values[p.id] ?? '';
+    let manual = false;
     if (p.result_type === 'calculated') {
-      value = formatValue(evalFormula(p.formula, byCode, ctx), p.decimals ?? 1);
+      // A value typed by hand wins over the formula; empty = automatic again.
+      manual = value !== '' && value != null && String(value).trim() !== '';
+      if (!manual) value = formatValue(evalFormula(p.formula, byCode, ctx), p.decimals ?? 1);
       if (p.code) byCode[p.code] = value;
     }
     const r = findRange(rangesByParam[p.id] || [], patient, at);
@@ -134,7 +138,7 @@ export function buildResults(params, values, rangesByParam, patient, at = new Da
       value: value === null ? '' : String(value), unit: p.unit || '',
       ref_low: r?.low ?? null, ref_high: r?.high ?? null, ref_text: rangeText(r),
       flag: flagFor(p, value, r), critical: criticalFor(p, value),
-      calculated: p.result_type === 'calculated' || undefined, optional: p.result_type === 'text' || undefined,
+      calculated: p.result_type === 'calculated' || undefined, manual: manual || undefined, optional: p.result_type === 'text' || isMorph(p) || undefined,
     });
   }
   return out;

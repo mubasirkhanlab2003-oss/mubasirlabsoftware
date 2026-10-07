@@ -154,4 +154,15 @@ describe('range approval and absolute counts', () => {
     const out = buildResults(params, { w: '8.0', n: '60' }, {}, pt);
     expect(out.find((x) => x.name === 'Abs').value).toBe('4800');
   });
+  it('a hand-typed calculated value wins; empty goes back to automatic', () => {
+    const params = [
+      { id: 'w', name: 'WBC', code: 'WBC', result_type: 'numeric', sort_order: 1 },
+      { id: 'n', name: 'Neu', code: 'NEU', result_type: 'numeric', sort_order: 2 },
+      { id: 'a', name: 'Abs', result_type: 'calculated', formula: '{NEU}*{WBC}*10', decimals: 0, sort_order: 3 },
+    ];
+    const man = buildResults(params, { w: '8.0', n: '60', a: '4700' }, {}, pt).find((x) => x.name === 'Abs');
+    expect(man.value).toBe('4700'); expect(man.manual).toBe(true);
+    const auto = buildResults(params, { w: '8.0', n: '60', a: '' }, {}, pt).find((x) => x.name === 'Abs');
+    expect(auto.value).toBe('4800'); expect(auto.manual).toBeUndefined();
+  });
 });

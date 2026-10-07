@@ -9,6 +9,7 @@ import {
   ORGANISMS, reflexSuggestions, SIR,
 } from '../lib/results.js';
 import { fmtDate } from '../lib/format.js';
+import { isMorph, nextMorph, numbered, SMEAR_PRESETS } from '../lib/smear.js';
 import { Field, Modal, useAction, useToast } from './ui.jsx';
 
 const LONG_TEXT = /opinion|advice|comment|interpretation|impression|diagnosis/i;
@@ -36,7 +37,7 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
 
   const [vals, setVals] = useState(() => {
     const o = {};
-    for (const r of row.results || []) o[r.parameter_id || r.name] = r.value;
+    for (const r of row.results || []) if (!r.calculated || r.manual) o[r.parameter_id || r.name] = r.value;
     return o;
   });
   useEffect(() => {
@@ -79,6 +80,16 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
     return reflex.map((r) => ({ ...r, test: all.find((t) => t.code === r.code) }))
       .filter((r) => r.test && !on.some((x) => x.test_id === r.test.id && x.status !== 'cancelled'));
   }, [reflex.map((r) => r.code).join()], []);
+
+  function applyPreset(pr) {
+    const next = { ...vals };
+    for (const p of active) {
+      if (p.name === 'Opinion') next[p.id] = pr.opinion;
+      else if (p.name === 'Advices') next[p.id] = numbered(pr.advices);
+      else if (isMorph(p) && pr.morph.includes(p.name) && !next[p.id]) next[p.id] = '+';
+    }
+    setVals(next);
+  }
 
   function payload() {
     const base = { analyser: analyser || null, remarks: remarks || null };
@@ -153,6 +164,12 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
       <div ref={gridRef} onKeyDown={onGridKey}>
         {kind === 'parameters' && (
           <>
+            {active.some((p) => p.name === 'Opinion') && (
+              <div className="row" style={{ marginBottom: 8, gap: 6 }}>
+                <span className="faint">Quick opinion:</span>
+                {SMEAR_PRESETS.map((pr) => <button key={pr.label} type="button" className="btn small" onClick={() => applyPreset(pr)}>{pr.label}</button>)}
+              </div>
+            )}
             {!active.length && <div className="note bad">This test has no parameters yet. Add them in Settings → Tests & prices.</div>}
             <div className="table-wrap">
               <table className="t result-grid">
@@ -163,13 +180,32 @@ export default function ResultEntry({ row, acc, patient, amend = false, onClose 
                     const prev = prevFor(p);
                     const d = deltas.find((x) => x.parameter_id === p.id);
                     const sec = p.section && p.section !== active[i - 1]?.section ? p.section : null;
+                    if (isMorph(p)) {
+                      if (isMorph(active[i - 1])) return null;
+                      const group = []; for (let k = i; k < active.length && isMorph(active[k]); k++) group.push(active[k]);
+                      return [
+                        sec && <tr key={'s' + p.id} className="sec"><td colSpan={6}>{sec}</td></tr>,
+                        <tr key={'m' + p.id}><td colSpan={6}>
+                          <div className="chips" role="group" aria-label="RBC morphology">
+                            {group.map((g) => (
+                              <button key={g.id} type="button" className={`mchip ${vals[g.id] ? 'on' : ''}`} title="Tap: + → ++ → +++ → clear"
+                                onClick={() => setVals({ ...vals, [g.id]: nextMorph(vals[g.id]) })}>{g.name}{vals[g.id] ? <b> {vals[g.id]}</b> : null}</button>
+                            ))}
+                          </div>
+                        </td></tr>,
+                      ];
+                    }
                     return [
                       sec && <tr key={'s' + p.id} className="sec"><td colSpan={6}>{sec}</td></tr>,
                       <tr key={p.id}>
                         <td>{p.name}</td>
                         <td>
                           {p.result_type === 'calculated'
-                            ? <input value={r.value} disabled title={`Calculated: ${p.formula}`} />
+                            ? <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+                              <input value={vals[p.id] || r.value} className={r.manual ? 'manual' : ''} title={`Fills itself: ${p.formula}. Type to enter your own value.`}
+                                inputMode="decimal" onChange={(e) => setVals({ ...vals, [p.id]: e.target.value })} />
+                              {r.manual ? <button type="button" className="btn small ghost" title="Go back to the automatic value" onClick={() => setVals({ ...vals, [p.id]: '' })}>Auto</button> : <span className="faint" style={{ fontSize: 11 }}>auto</span>}
+                            </div>
                             : p.result_type === 'option'
                               ? <select autoFocus={i === 0} value={vals[p.id] ?? ''} onChange={(e) => setVals({ ...vals, [p.id]: e.target.value })}>
                                   <option value="" />{(p.options || '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => <option key={o}>{o}</option>)}

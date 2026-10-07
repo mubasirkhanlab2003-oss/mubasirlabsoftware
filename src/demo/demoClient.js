@@ -2,6 +2,7 @@
 // seeded catalogue, used to click through the app and take screenshots
 // without a real server. Never included in a normal build.
 import { ALIASES } from '../../sql/aliases.mjs';
+import { PEDS } from '../../sql/peds.mjs';
 import { TESTS, PACKAGES, ANTIBIOTICS, TEMPLATES } from '../../sql/catalogue.mjs';
 
 // Deterministic ids, so reloading the page does not duplicate the seed.
@@ -20,11 +21,14 @@ function seed(T) {
   let order = 0;
   for (const t of TESTS) {
     const id = uid(); byCode[t.code] = id;
-    put('lab_tests', { id, code: t.code, name: t.name, category: t.dept, sample_type: t.sample, container: t.container, tat_hours: t.tat, instructions: t.prep || null, result_kind: t.kind || 'parameters', method: t.method || null, report_note: t.note || null, price: PRICES[t.code] ?? null, aliases: ALIASES[t.code] || null, active: true, sort_order: (order += 10), kind: 'test', components: [], auto_verify: t.auto !== false, is_starter: true, ranges_reviewed: false });
+    put('lab_tests', { id, code: t.code, name: t.name, category: t.dept, sample_type: t.sample, container: t.container, tat_hours: t.tat, instructions: t.prep || null, result_kind: t.kind || 'parameters', method: t.method || null, report_note: t.note || null, price: PRICES[t.code] ?? (import.meta.env.VITE_PRICEALL ? 100 : null), aliases: ALIASES[t.code] || null, active: true, sort_order: (order += 10), kind: 'test', components: [], auto_verify: t.auto !== false, is_starter: true, ranges_reviewed: false });
     t.params.forEach((p, i) => {
       const pid = uid();
       put('lab_parameters', { id: pid, test_id: id, name: p.n, code: p.c || null, unit: p.u || null, result_type: p.t || 'numeric', options: p.o || null, decimals: p.d ?? 1, sort_order: i + 1, formula: p.f || null, critical_low: p.cl ?? null, critical_high: p.ch ?? null, delta_pct: p.dp ?? null, reflex: p.rx || null, section: p.s || null, active: true });
-      for (const r of p.r || []) put('lab_reference_ranges', { id: uid(), parameter_id: pid, gender: r.g || 'any', age_min_days: r.a0 || 0, age_max_days: r.a1 ?? null, low: r.lo ?? null, high: r.hi ?? null, display_text: r.x || null, active: true });
+      const adult = p.r?.some((r) => r.a0 === 6570);
+      const kids = (PEDS[p.n] || []).map(([a0, a1, g, lo, hi, x]) => ({ a0, a1, g, lo, hi, x }));
+      const rs = [...(p.r || []).map((r) => (r.a0 === 6570 && !PEDS[p.n] ? { ...r, a0: 0 } : r)), ...(adult || p.r?.length ? kids : [])];
+      for (const r of rs) put('lab_reference_ranges', { id: uid(), parameter_id: pid, gender: r.g || 'any', age_min_days: r.a0 || 0, age_max_days: r.a1 ?? null, low: r.lo ?? null, high: r.hi ?? null, display_text: r.x || null, source: 'Starter value (standard reference)', status: 'approved', active: true });
     });
   }
   PACKAGES.forEach(([code, name, codes], i) => put('lab_tests', { id: uid(), code, name, category: 'Packages', sample_type: 'Multiple', kind: 'package', components: codes.map((c) => byCode[c]).filter(Boolean), price: PRICES[code] ?? null, active: true, sort_order: i }));

@@ -425,3 +425,9 @@ table.doc .hl { color: #b42a2a; font-weight: 700; }
   .figures .stat { min-width: 130px; padding: 12px 14px; }
   .modal { padding: 16px; }
 }
+
+/* quick morphology taps */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.mchip { border: 1.5px solid var(--line, #cfd6d4); background: var(--surface, #fff); color: inherit; border-radius: 999px; padding: 7px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.mchip.on { background: var(--amber-50, #fff3d6); border-color: var(--amber, #b7791f); color: var(--amber, #8a5a00); }
+.mchip b { margin-left: 4px; }

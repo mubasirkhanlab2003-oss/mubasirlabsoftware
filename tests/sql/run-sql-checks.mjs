@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { findRange } from '../../src/lib/results.js';
 
 const NEW = readFileSync(new URL('../../final_supabase.sql', import.meta.url), 'utf8');
 let OLD = '';
@@ -82,6 +83,28 @@ async function main(withOld) {
   ok(badStatus, 'range status must be draft or approved');
   await db.exec(`select analysers, print_staff from lab_settings; select analyser from lab_tests limit 1; select analyser, reported_by from accession_tests limit 1`);
   ok(true);
+
+  // Every numeric parameter that has a range must show a reference for every age and for the sexes it covers.
+  {
+    const ps = (await db.query(`select p.id, p.name, t.code from lab_parameters p join lab_tests t on t.id = p.test_id
+                                where t.kind = 'test' and p.result_type in ('numeric','calculated') and p.active`)).rows;
+    const rs = (await db.query(`select * from lab_reference_ranges where active`)).rows;
+    const by = {}; for (const r of rs) (by[r.parameter_id] ||= []).push(r);
+    const ages = [10, 200, 800, 3650, 5800, 11000, 25000];
+    const bad = [];
+    for (const p of ps) {
+      const list = by[p.id] || [];
+      if (!list.some((r) => r.low != null || r.high != null)) continue;
+      const sexes = ['male', 'female'].filter((g) => list.some((r) => r.gender === 'any' || r.gender === g));
+      for (const g of sexes) for (const d of ages) {
+        const dob = new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+        const r = findRange(list.map((x) => ({ ...x, low: x.low, high: x.high })), { dob, gender: g });
+        if (!r || (r.low == null && r.high == null && !r.display_text)) bad.push(`${p.code}/${p.name} ${g} ${d}d`);
+      }
+    }
+    if (bad.length && process.env.DBG) { const f = ps.find((x) => bad[0].startsWith(x.code + '/' + x.name)); console.log(JSON.stringify(by[f.id])); }
+    ok(bad.length === 0, `${bad.length} parameter/age combinations without a reference range: ` + bad.slice(0, 25).join('; '));
+  }
 
   if (withOld) {
     const acc = await one(`select a.acc_number, public.acc_total(a.id) tot, public.acc_paid(a.id) paid, a.doctor_text,

@@ -1307,6 +1307,14 @@ where t.id = p.test_id and t.code = 'SEMEN' and t.is_starter and not t.ranges_re
                  'Progressive motility (PR)','Non-progressive (NP)','Immotile','Normal forms','Vitality','Pus cells','Comment')
   and exists (select 1 from public.lab_parameters n where n.test_id = t.id and n.name = 'Semen volume');
 
+-- Starter adult-only ranges of parameters WITHOUT children's bands now apply to all ages
+-- (a child must still see a reference range).
+update public.lab_reference_ranges r set age_min_days = 0
+ where r.age_min_days = 6570 and r.age_max_days is null and r.active
+   and r.note like 'Starter%' and r.note not like 'Starter paediatric%'
+   and not exists (select 1 from public.lab_reference_ranges r2
+                    where r2.parameter_id = r.parameter_id and r2.active and r2.id <> r.id and r2.age_min_days < 6570);
+
 drop function if exists public._seed_test(jsonb);
 drop function if exists public._seed_peds(text, jsonb);
 drop function if exists public._seed_package(text, text, int, text[]);

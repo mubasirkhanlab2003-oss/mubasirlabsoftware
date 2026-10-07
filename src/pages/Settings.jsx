@@ -257,7 +257,7 @@ function TestModal({ t, manage, onClose }) {
                     <td><b>{p.name}</b>{p.section && <div className="faint">{p.section}</div>}</td>
                     <td className="faint">{p.code}</td><td className="faint">{p.unit}</td>
                     <td className="faint">{p.result_type}{p.formula ? `: ${p.formula.length > 30 ? p.formula.slice(0, 30) + '…' : p.formula}` : ''}{p.options ? `: ${p.options}` : ''}</td>
-                    <td className="faint">{ranges.filter((r) => r.parameter_id === p.id && r.active !== false).map((r) => <div key={r.id}>{r.gender !== 'any' ? r.gender + ' ' : ''}{ageBand(r)}{rangeText(r)}{r.status === 'draft' ? ' (draft)' : ''}</div>)}</td>
+                    <td className="faint">{ranges.filter((r) => r.parameter_id === p.id && r.active !== false && r.age_max_days == null && (!r.age_min_days || r.age_min_days === 6570)).map((r) => <div key={r.id}>{r.gender !== 'any' ? r.gender + ' ' : ''}{ageBand(r)}{rangeText(r)}{r.status === 'draft' ? ' (draft)' : ''}</div>)}</td>
                     <td className="faint">{[p.critical_low != null && `< ${p.critical_low}`, p.critical_high != null && `> ${p.critical_high}`].filter(Boolean).join(' · ')}</td>
                     <td className="right nowrap"><button className="btn small ghost" onClick={() => setParamEdit(p)}>Edit</button><button className="btn small ghost" onClick={() => setRangeFor(p)}>Ranges</button></td>
                   </tr>
@@ -344,6 +344,11 @@ function RangesModal({ p, ranges, onClose }) {
   const [showHist, setShowHist] = useState(false);
   const run = useAction();
   const active = ranges.filter((r) => r.active !== false);
+  const ADULT_D = 6570;
+  const isSimple = (r) => r.age_max_days == null && (!r.age_min_days || r.age_min_days === ADULT_D); // male/female for adults (or all ages)
+  const simple = active.filter(isSimple);
+  const kids = active.filter((r) => !isSimple(r));
+  const [adv, setAdv] = useState(false);
   const history = ranges.filter((r) => r.active === false).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   const days = (v, u) => (v === '' ? null : Math.round(Number(v) * (u === 'y' ? 365.25 : u === 'm' ? 30.44 : 1)));
   const stamp = (status) => (status === 'approved' && canApprove ? { approved_by: me, approved_at: new Date().toISOString() } : { approved_by: null, approved_at: null });
@@ -352,7 +357,7 @@ function RangesModal({ p, ranges, onClose }) {
   function startEdit(r) {
     const toY = (d) => (d == null ? ['', 'y'] : d % 365 === 0 || d >= 730 ? [String(Math.round(d / 365.25 * 10) / 10), 'y'] : [String(d), 'd']);
     const [from, fromU] = toY(r.age_min_days || 0); const [to, toU] = toY(r.age_max_days);
-    setEditing(r);
+    setEditing(r); setAdv(!isSimple(r));
     setF({ gender: r.gender, from: r.age_min_days ? from : '', fromU, to, toU, low: r.low ?? '', high: r.high ?? '', display_text: r.display_text || '', source: r.source || '', status: canApprove ? 'approved' : 'draft' });
   }
   function rowFromForm() {
@@ -365,6 +370,8 @@ function RangesModal({ p, ranges, onClose }) {
     const row = rowFromForm();
     await insertRow('lab_reference_ranges', row);
     if (editing) await updateRow('lab_reference_ranges', editing.id, { active: false });
+    // a plain male/female range replaces the old adult range of the same sex (old one stays in history)
+    if (!adv && !f.from && !f.to) for (const o of simple) if (o.gender === row.gender && o.id !== editing?.id) await updateRow('lab_reference_ranges', o.id, { active: false });
     setEditing(null); setF({ ...blank, source: f.source });
   }
   async function saveGrid() {
@@ -384,32 +391,43 @@ function RangesModal({ p, ranges, onClose }) {
   const statusBadge = (r) => (r.status === 'draft'
     ? <span className="badge amber" title="Not used on reports until approved">Draft</span>
     : <span className="badge green" title={r.approved_by ? `Approved by ${r.approved_by}` : 'Approved'}>Approved</span>);
+
+  const RangeRows = ({ rows }) => (
+    <table className="t compact">
+      <thead><tr><th>Sex</th><th>Age</th><th>Range</th><th>Source</th><th>Status</th><th /></tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id}><td>{r.gender === 'any' ? 'Male & Female' : r.gender}</td><td>{isSimple(r) ? (r.age_min_days ? 'adults' : 'all ages') : ageBand(r).replace(/: $/, '')}</td><td><b>{rangeText(r)}</b></td>
+            <td className="faint">{r.source || r.note}</td>
+            <td>{statusBadge(r)}{r.status !== 'draft' && r.approved_by && <div className="faint">{r.approved_by}{r.approved_at ? ` · ${fmtDateTime(r.approved_at)}` : ''}</div>}</td>
+            <td className="right nowrap">
+              {r.status === 'draft' && canApprove && <button className="btn small" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { status: 'approved', ...stamp('approved') }), 'Range approved')}>Approve</button>}
+              <button className="btn small ghost" onClick={() => startEdit(r)}>Edit</button>
+              <button className="btn small ghost" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { active: false }), 'Range removed (kept in history)')}>Remove</button>
+            </td></tr>
+        ))}
+      </tbody>
+    </table>
+  );
   return (
     <Modal wide="x" title={`Reference ranges: ${p.name}`} onClose={onClose} footer={<button className="btn" onClick={onClose}>Done</button>}>
       <p className="muted" style={{ marginTop: 0 }}>The approved range matching the patient's sex and age is used. A sex-specific range wins over "any"; the narrowest age band wins. <b>Draft</b> ranges are ignored until a pathologist/admin approves them. Changing a range keeps the old one in history.</p>
-      <table className="t compact">
-        <thead><tr><th>Sex</th><th>Age</th><th>Range</th><th>Source</th><th>Status</th><th /></tr></thead>
-        <tbody>
-          {active.sort((a, b) => (a.age_min_days || 0) - (b.age_min_days || 0)).map((r) => (
-            <tr key={r.id}><td>{r.gender}</td><td>{ageBand(r).replace(/: $/, '') || 'all ages'}</td><td><b>{rangeText(r)}</b></td>
-              <td className="faint">{r.source || r.note}</td>
-              <td>{statusBadge(r)}{r.status !== 'draft' && r.approved_by && <div className="faint">{r.approved_by}{r.approved_at ? ` · ${fmtDateTime(r.approved_at)}` : ''}</div>}</td>
-              <td className="right nowrap">
-                {r.status === 'draft' && canApprove && <button className="btn small" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { status: 'approved', ...stamp('approved') }), 'Range approved')}>Approve</button>}
-                <button className="btn small ghost" onClick={() => startEdit(r)}>Edit</button>
-                <button className="btn small ghost" onClick={() => run(() => updateRow('lab_reference_ranges', r.id, { active: false }), 'Range removed (kept in history)')}>Remove</button>
-              </td></tr>
-          ))}
-        </tbody>
-      </table>
-      {!active.length && <p className="faint">No range yet.</p>}
+      <RangeRows rows={simple} />
+      {!simple.length && <p className="faint">No normal range yet. Add one below.</p>}
+      {kids.length > 0 && (
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: 'pointer' }}><b>Children's ranges ({kids.length})</b> <span className="faint">— used automatically when the patient is a child; adults use the ranges above</span></summary>
+          <RangeRows rows={kids.sort((a, b) => (a.age_min_days || 0) - (b.age_min_days || 0))} />
+        </details>
+      )}
       {active.length > 0 && !active.some((r) => r.status !== 'draft') && <div className="note warn" style={{ marginTop: 8 }}>All ranges are drafts, so results will not be flagged. Approve a range.</div>}
 
-      <h3 style={{ marginTop: 14 }}>{editing ? 'Change this range' : 'Add a range'}</h3>
+      <h3 style={{ marginTop: 14 }}>{editing ? 'Change this range' : 'Add / replace a range'}</h3>
       <div className="grid4">
         <Field label="Sex"><select value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value })}><option value="any">Any</option><option value="male">Male</option><option value="female">Female</option></select></Field>
-        <Field label="Age from"><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input type="number" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /><select value={f.fromU} onChange={(e) => setF({ ...f, fromU: e.target.value })} style={{ width: 70 }}><option value="y">yr</option><option value="m">mo</option><option value="d">day</option></select></div></Field>
-        <Field label="Age to (blank = no limit)"><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input type="number" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /><select value={f.toU} onChange={(e) => setF({ ...f, toU: e.target.value })} style={{ width: 70 }}><option value="y">yr</option><option value="m">mo</option><option value="d">day</option></select></div></Field>
+        {adv && <Field label="Age from"><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input type="number" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /><select value={f.fromU} onChange={(e) => setF({ ...f, fromU: e.target.value })} style={{ width: 70 }}><option value="y">yr</option><option value="m">mo</option><option value="d">day</option></select></div></Field>}
+        {adv && <Field label="Age to (blank = no limit)"><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input type="number" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /><select value={f.toU} onChange={(e) => setF({ ...f, toU: e.target.value })} style={{ width: 70 }}><option value="y">yr</option><option value="m">mo</option><option value="d">day</option></select></div></Field>}
+        {!adv && <div className="span2" />}
         <div />
         <Field label="Low"><input type="number" value={f.low} onChange={(e) => setF({ ...f, low: e.target.value })} /></Field>
         <Field label="High"><input type="number" value={f.high} onChange={(e) => setF({ ...f, high: e.target.value })} /></Field>
@@ -425,7 +443,8 @@ function RangesModal({ p, ranges, onClose }) {
       {!canApprove && <p className="faint">Ranges you add stay as Draft until the pathologist or admin approves them.</p>}
 
       <div className="row" style={{ marginTop: 14, gap: 8 }}>
-        <button className="btn small" onClick={() => setGrid(!grid)}>{grid ? 'Hide age-wise table' : 'Age-wise table (newborn to adult)'}</button>
+        <button className="btn small ghost" onClick={() => { setAdv(!adv); if (adv) setGrid(false); }}>{adv ? 'Hide age-wise options' : 'Age-wise options (children)'}</button>
+        {adv && <button className="btn small" onClick={() => setGrid(!grid)}>{grid ? 'Hide age-wise table' : 'Age-wise table (newborn to adult)'}</button>}
         {history.length > 0 && <button className="btn small ghost" onClick={() => setShowHist(!showHist)}>{showHist ? 'Hide history' : `History (${history.length} old)`}</button>}
       </div>
       {grid && (
